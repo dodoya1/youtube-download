@@ -53,6 +53,158 @@ COLORS = {
 SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
+# ── ダウンロード結果トラッカー ─────────────────────────────────────────────────
+class DownloadTracker:
+    """
+    プレイリスト全体のダウンロード結果（成功・失敗）を動画単位で追跡するクラス。
+
+    yt-dlp の progress_hooks と postprocessor_hooks、およびカスタムロガーと
+    連携して各動画の成否を記録し、完了後にサマリーを表示する。
+
+    :ivar succeeded: ダウンロード成功した動画の情報リスト（title, url）
+    :ivar failed: ダウンロード失敗した動画の情報リスト（title, url, reason）
+    """
+
+    def __init__(self) -> None:
+        """DownloadTracker を初期化する。"""
+        self.succeeded: list[dict] = []
+        self.failed:    list[dict] = []
+        self._current:  dict = {}   # 現在処理中の動画情報
+
+    def set_current(self, info_dict: dict) -> None:
+        """
+        現在処理中の動画情報を更新する。progress_hook から呼ばれる。
+
+        :param info_dict: yt-dlp の info_dict（title / webpage_url / id を含む）
+        :type info_dict: dict
+        :return: None
+        """
+        self._current = {
+            "title": info_dict.get("title") or info_dict.get("id", "Unknown"),
+            "url":   info_dict.get("webpage_url") or info_dict.get("url", ""),
+            "id":    info_dict.get("id", ""),
+        }
+
+    def record_success(self) -> None:
+        """
+        現在処理中の動画を成功リストに追加する。postprocessor_hook から呼ばれる。
+
+        :return: None
+        """
+        if self._current and self._current not in self.succeeded:
+            self.succeeded.append(dict(self._current))
+
+    def record_failure(self, reason: str) -> None:
+        """
+        現在処理中の動画を失敗リストに追加する。カスタムロガーから呼ばれる。
+
+        :param reason: yt-dlp が報告したエラーメッセージ
+        :type reason: str
+        :return: None
+        """
+        entry = {**self._current, "reason": reason}
+        if entry not in self.failed:
+            self.failed.append(entry)
+
+    def print_summary(self) -> None:
+        """
+        ダウンロード完了後の結果サマリーをターミナルに出力する。
+
+        成功件数・失敗件数・失敗動画の詳細（タイトル・URL・エラー理由）を表示する。
+
+        :return: None
+        """
+        total = len(self.succeeded) + len(self.failed)
+        print()
+        print(c("══════════════════════════════════════════", "cyan"))
+        print(c("  📊  ダウンロード結果サマリー", "cyan", "bold"))
+        print(c("══════════════════════════════════════════", "cyan"))
+        print(
+            f"  合計: {total} 件  "
+            f"成功: {c(str(len(self.succeeded)), 'green', 'bold')} 件  "
+            f"失敗: {c(str(len(self.failed)), 'red', 'bold') if self.failed else c('0', 'green', 'bold')} 件"
+        )
+
+        if self.succeeded:
+            print()
+            print(c(f"  ✅  成功 ({len(self.succeeded)} 件)", "green", "bold"))
+            for i, v in enumerate(self.succeeded, 1):
+                print(f"    {i:3}. {v['title']}")
+
+        if self.failed:
+            print()
+            print(c(f"  ❌  失敗 ({len(self.failed)} 件)", "red", "bold"))
+            for i, v in enumerate(self.failed, 1):
+                title = v.get("title", "Unknown")
+                url = v.get("url",   "")
+                reason = v.get("reason", "")
+                # エラー理由から先頭の不要なプレフィックスを除去して短くする
+                short_reason = reason.split(": ", 2)[-1].split("\n")[0][:80]
+                print(f"    {c(str(i).rjust(3), 'red')}. {c(title, 'bold')}")
+                if url:
+                    print(f"         URL   : {url}")
+                print(f"         理由  : {c(short_reason, 'yellow')}")
+
+        print(c("══════════════════════════════════════════", "cyan"))
+
+
+class YtDlpLogger:
+    """
+    yt-dlp のログ出力を横取りするカスタムロガークラス。
+
+    エラーメッセージを ``DownloadTracker`` に転送して失敗動画を記録する。
+    警告は標準エラー出力に表示し、デバッグは抑制する。
+
+    :param tracker: ダウンロード結果を追跡する DownloadTracker インスタンス
+    :type tracker: DownloadTracker
+    """
+
+    def __init__(self, tracker: "DownloadTracker") -> None:
+        """
+        YtDlpLogger を初期化する。
+
+        :param tracker: 失敗記録を委譲する DownloadTracker インスタンス
+        :type tracker: DownloadTracker
+        """
+        self.tracker = tracker
+
+    def debug(self, msg: str) -> None:
+        """
+        デバッグメッセージを処理する（抑制）。
+
+        yt-dlp は通常の情報ログも debug() 経由で送るため、
+        ``[download]`` や ``[info]`` を含む行は標準出力にそのまま表示する。
+
+        :param msg: yt-dlp からのデバッグメッセージ
+        :type msg: str
+        :return: None
+        """
+        # [download] / [info] / [Merger] 等の通常ログはそのまま表示
+        if msg.startswith("["):
+            print(msg)
+
+    def warning(self, msg: str) -> None:
+        """
+        WARNING メッセージを標準エラー出力に表示する。
+
+        :param msg: yt-dlp からの警告メッセージ
+        :type msg: str
+        :return: None
+        """
+        print(c(f"[WARN]  {msg}", "yellow"), file=sys.stderr)
+
+    def error(self, msg: str) -> None:
+        """
+        エラーメッセージを標準エラー出力に表示し、失敗として記録する。
+
+        :param msg: yt-dlp からのエラーメッセージ
+        :type msg: str
+        :return: None
+        """
+        print(c(f"[ERROR] {msg}", "red"), file=sys.stderr)
+        self.tracker.record_failure(msg)
+
+
 # ── ユーティリティ ────────────────────────────────────────────────────────────
 def c(text: str, *keys: str) -> str:
     """
@@ -142,14 +294,17 @@ class EncodingSpinner:
     :type label: str
     """
 
-    def __init__(self, label: str = "エンコード中") -> None:
+    def __init__(self, label: str = "エンコード中", tracker: "DownloadTracker | None" = None) -> None:
         """
         EncodingSpinner を初期化する。
 
         :param label: スピナーに表示するラベル文字列
         :type label: str
+        :param tracker: 成功記録を委譲する DownloadTracker インスタンス（省略可）
+        :type tracker: DownloadTracker | None
         """
         self.label = label
+        self.tracker = tracker
         self._stop_evt = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._start_ts = 0.0
@@ -206,9 +361,9 @@ def make_postprocessor_hook(spinner: EncodingSpinner):
     yt-dlp の後処理フック関数を生成して返す。
 
     FFmpegMergerPP または FFmpegVideoConvertorPP の開始・終了イベントで
-    スピナーを制御する。
+    スピナーを制御し、完了時に DownloadTracker へ成功を記録する。
 
-    :param spinner: 制御対象の EncodingSpinner インスタンス
+    :param spinner: 制御対象の EncodingSpinner インスタンス（tracker を内包）
     :type spinner: EncodingSpinner
     :return: yt-dlp の ``postprocessor_hooks`` に渡すコールバック関数
     :rtype: callable
@@ -240,6 +395,8 @@ def make_postprocessor_hook(spinner: EncodingSpinner):
                 spinner.start()
             elif status == "finished":
                 spinner.stop()
+                # マージ・変換完了 = その動画のダウンロード成功
+                spinner.tracker.record_success()
 
     return hook
 
@@ -326,10 +483,13 @@ def build_ydl_opts(
     :return: yt-dlp.YoutubeDL に渡すオプション辞書
     :rtype: dict
     """
+    yt_logger = YtDlpLogger(spinner.tracker)  # type: ignore[arg-type]
     common = {
         "outtmpl":             outtmpl,
-        "progress_hooks":      [make_progress_hook()],
+        # type: ignore[arg-type]
+        "progress_hooks":      [make_progress_hook(spinner.tracker)],
         "postprocessor_hooks": [make_postprocessor_hook(spinner)],
+        "logger":              yt_logger,
         "noplaylist":          no_playlist,
         "ignoreerrors":        True,
     }
@@ -391,12 +551,13 @@ def build_ydl_opts(
 
 
 # ── ダウンロード進捗フック ────────────────────────────────────────────────────
-def make_progress_hook():
+def make_progress_hook(tracker: "DownloadTracker"):
     """
-    yt-dlp のダウンロード進捗を表示するフック関数を生成して返す。
+    yt-dlp のダウンロード進捗を表示しつつ、成功した動画を DownloadTracker に記録する
+    フック関数を生成して返す。
 
-    フック関数はダウンロード中にプログレスバーを描画する。
-
+    :param tracker: 成功記録を委譲する DownloadTracker インスタンス
+    :type tracker: DownloadTracker
     :return: yt-dlp の ``progress_hooks`` に渡すコールバック関数
     :rtype: callable
     """
@@ -412,6 +573,11 @@ def make_progress_hook():
         """
         status = d.get("status")
         filename = d.get("filename", "")
+        info_dict = d.get("info_dict", {})
+
+        # 動画情報が取れたタイミングで tracker の現在動画を更新する
+        if info_dict:
+            tracker.set_current(info_dict)
 
         if status == "downloading":
             if filename != last_filename[0]:
@@ -494,7 +660,8 @@ def download(
     info(f"出力先: {OUTPUT_DIR}/")
     print()
 
-    spinner = EncodingSpinner()
+    tracker = DownloadTracker()
+    spinner = EncodingSpinner(tracker=tracker)
     ydl_opts = build_ydl_opts(
         quality, fmt, audio_only, no_playlist, outtmpl, mode, spinner
     )
@@ -502,11 +669,14 @@ def download(
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
             ret = ydl.download([url])
-        print()
-        if ret == 0:
+        # 結果サマリーを表示（プレイリストの場合は特に有用）
+        tracker.print_summary()
+        if not tracker.failed:
             ok("ダウンロード完了！  QuickTime Player で再生できます 🎬")
-        else:
+        elif tracker.succeeded:
             warn("一部の動画でエラーが発生しましたが、処理を続行しました。")
+        else:
+            error("すべての動画のダウンロードに失敗しました。")
     except DownloadError as e:
         error(f"ダウンロードエラー: {e}")
         sys.exit(1)
@@ -514,6 +684,7 @@ def download(
         print()
         spinner._stop_evt.set()  # スピナーが動いていれば停止
         warn("ユーザーによって中断されました。")
+        tracker.print_summary()
         sys.exit(130)
 
 
