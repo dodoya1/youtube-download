@@ -2,19 +2,20 @@
 """
 yt_downloader.py - yt-dlp を使った YouTube 動画ダウンローダー。
 
-QuickTime Player（Mac標準）で再生できる H.264 + AAC / MP4 を優先して
-ダウンロードし、非対応コーデックの場合は ffmpeg で変換します。
+**事前準備（初回のみ）**::
+
+    brew install node      # JS ランタイム（全フォーマット取得に必須）
+    brew install ffmpeg    # 動画マージ・変換に必須
 
 使い方::
 
     python yt_downloader.py "<URL>" [オプション]
 
-例::
+モード::
 
-    python yt_downloader.py "https://youtu.be/xxxxx"
-    python yt_downloader.py "https://youtu.be/xxxxx" -q 1080 -f mp4
-    python yt_downloader.py "https://www.youtube.com/playlist?list=xxxxx"
-    python yt_downloader.py "https://youtu.be/xxxxx" --audio-only
+    デフォルト  最高画質ダウンロード + M1 ハードウェアエンコード（推奨）
+    --fast      H.264 ストリームコピー（最大 1080p・数秒）
+    --hq        最高画質 + libx264 ソフトウェアエンコード（最高品質・低速）
 
 .. note::
     URL に ``?`` が含まれる場合は必ずクォートで囲んでください。
@@ -23,6 +24,8 @@ QuickTime Player（Mac標準）で再生できる H.264 + AAC / MP4 を優先し
 
 import argparse
 import sys
+import threading
+import time
 from pathlib import Path
 
 import yt_dlp
@@ -35,7 +38,7 @@ QUALITY_OPTIONS = ["best", "2160", "1440",
                    "1080", "720", "480", "360", "240", "144"]
 FORMAT_OPTIONS = ["mp4", "mkv", "webm"]
 
-# ffmpeg で変換する際の映像品質（CRF: 低いほど高品質、18 は視覚的無劣化に近い）
+# libx264 再エンコード時の品質（CRF: 低いほど高品質、18 は視覚的無劣化に近い）
 FFMPEG_CRF = "18"
 
 COLORS = {
@@ -46,6 +49,8 @@ COLORS = {
     "bold":   "\033[1m",
     "reset":  "\033[0m",
 }
+
+SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 
 # ── ユーティリティ ────────────────────────────────────────────────────────────
@@ -112,36 +117,175 @@ def error(msg: str) -> None:
     print(c(f"[ERROR] {msg}", "red", "bold"), file=sys.stderr)
 
 
+def fmt_seconds(secs: float) -> str:
+    """
+    秒数を ``MM:SS`` 形式の文字列に変換する。
+
+    :param secs: 変換する秒数
+    :type secs: float
+    :return: ``MM:SS`` 形式の文字列
+    :rtype: str
+    """
+    m, s = divmod(int(secs), 60)
+    return f"{m:02d}:{s:02d}"
+
+
+# ── エンコード進捗スピナー ────────────────────────────────────────────────────
+class EncodingSpinner:
+    """
+    エンコード中の経過時間をリアルタイム表示するスピナークラス。
+
+    バックグラウンドスレッドで動作し、エンコード開始から経過した時間と
+    スピナーアニメーションをターミナルに表示する。
+
+    :param label: スピナーに表示するラベル文字列
+    :type label: str
+    """
+
+    def __init__(self, label: str = "エンコード中") -> None:
+        """
+        EncodingSpinner を初期化する。
+
+        :param label: スピナーに表示するラベル文字列
+        :type label: str
+        """
+        self.label = label
+        self._stop_evt = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._start_ts = 0.0
+
+    def start(self) -> None:
+        """
+        スピナーを開始する。バックグラウンドスレッドを起動して経過時間の表示を開始する。
+
+        :return: None
+        """
+        self._start_ts = time.time()
+        self._stop_evt.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        """
+        スピナーを停止する。スレッドを終了させ、完了メッセージを表示する。
+
+        :return: None
+        """
+        self._stop_evt.set()
+        self._thread.join()
+        elapsed = time.time() - self._start_ts
+        # 進捗行をクリアして完了メッセージを表示
+        print(f"\r{' ' * 60}\r", end="")
+        print(c(f"  ✅  エンコード完了  (所要時間: {fmt_seconds(elapsed)})", "green"))
+
+    def _run(self) -> None:
+        """
+        バックグラウンドスレッドのメインループ。
+
+        0.1 秒ごとにスピナーと経過時間を更新して標準出力に書き込む。
+
+        :return: None
+        """
+        idx = 0
+        while not self._stop_evt.is_set():
+            elapsed = time.time() - self._start_ts
+            frame = SPINNER_FRAMES[idx % len(SPINNER_FRAMES)]
+            line = (
+                f"\r  {c(frame, 'yellow')}  {c(self.label, 'yellow')}"
+                f"  経過: {c(fmt_seconds(elapsed), 'bold')}"
+                f"  {c('(Ctrl+C で中断)', 'reset')}   "
+            )
+            print(line, end="", flush=True)
+            idx += 1
+            time.sleep(0.1)
+
+
+# ── 後処理フック ──────────────────────────────────────────────────────────────
+def make_postprocessor_hook(spinner: EncodingSpinner):
+    """
+    yt-dlp の後処理フック関数を生成して返す。
+
+    FFmpegMergerPP または FFmpegVideoConvertorPP の開始・終了イベントで
+    スピナーを制御する。
+
+    :param spinner: 制御対象の EncodingSpinner インスタンス
+    :type spinner: EncodingSpinner
+    :return: yt-dlp の ``postprocessor_hooks`` に渡すコールバック関数
+    :rtype: callable
+    """
+    encoding_pps = {
+        "FFmpegMergerPP",
+        "FFmpegVideoConvertorPP",
+        "FFmpegVideoRemuxerPP",
+    }
+
+    def hook(d: dict) -> None:
+        """
+        yt-dlp から呼ばれる後処理コールバック。
+
+        :param d: yt-dlp が渡す後処理情報辞書
+        :type d: dict
+        :return: None
+        """
+        pp = d.get("postprocessor", "")
+        status = d.get("status", "")
+
+        if pp in encoding_pps:
+            if status == "started":
+                filename = Path(
+                    d.get("info_dict", {}).get("filepath", "")).name
+                label = f"マージ / エンコード中: {filename}"
+                spinner.label = label
+                print()  # 改行してからスピナーを開始
+                spinner.start()
+            elif status == "finished":
+                spinner.stop()
+
+    return hook
+
+
 # ── フォーマット文字列の構築 ──────────────────────────────────────────────────
-def build_format_selector(quality: str) -> str:
+def build_format_selector(quality: str, mode: str = "normal") -> str:
     """
     yt-dlp のフォーマットセレクタ文字列を組み立てる。
 
-    QuickTime Player との互換性を最優先し、以下の優先順位でストリームを選択する。
+    モードによって選択するコーデックと解像度の戦略が異なる。
 
-    1. H.264映像 (avc1) + AAC音声 (mp4a) ― 再エンコード不要で最高互換
-    2. H.264映像 + 任意音声 ― 音声のみ AAC に変換
-    3. 任意映像 + AAC音声 ― 映像のみ H.264 に変換
-    4. 任意映像 + 任意音声 ― 両方変換（4K など H.264 非提供時のフォールバック）
+    - ``"fast"``   : H.264 + AAC を優先（ストリームコピー可、最大 1080p）
+    - ``"normal"`` : コーデック制限なし・最高品質（VP9/AV1 含む、ハードウェアエンコード）
+    - ``"hq"``     : ``"normal"`` と同じセレクタ（libx264 ソフトウェアエンコード）
 
     :param quality: 解像度指定。``"best"`` または ``"1080"`` のような数字文字列。
     :type quality: str
+    :param mode: ダウンロードモード（``"fast"``, ``"normal"``, ``"hq"``）
+    :type mode: str
     :return: yt-dlp の ``format`` オプションに渡すセレクタ文字列
     :rtype: str
     """
-    if quality == "best":
+    if mode == "fast":
+        # H.264 + AAC を優先：ストリームコピーで数秒マージ
+        if quality == "best":
+            return (
+                "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]"
+                "/bestvideo[vcodec^=avc1]+bestaudio"
+                "/bestvideo+bestaudio[acodec^=mp4a]"
+                "/bestvideo+bestaudio/best"
+            )
+        h = quality
         return (
-            "bestvideo[vcodec^=avc1]+bestaudio[acodec^=mp4a]"
-            "/bestvideo[vcodec^=avc1]+bestaudio"
-            "/bestvideo+bestaudio[acodec^=mp4a]"
-            "/bestvideo+bestaudio/best"
+            f"bestvideo[vcodec^=avc1][height<={h}]+bestaudio[acodec^=mp4a]"
+            f"/bestvideo[vcodec^=avc1][height<={h}]+bestaudio"
+            f"/bestvideo[height<={h}]+bestaudio[acodec^=mp4a]"
+            f"/bestvideo[height<={h}]+bestaudio"
+            f"/best[height<={h}]/bestvideo+bestaudio/best"
         )
+
+    # normal / hq: コーデック制限なし・最高品質
+    if quality == "best":
+        return "bestvideo+bestaudio/best"
     h = quality
     return (
-        f"bestvideo[vcodec^=avc1][height<={h}]+bestaudio[acodec^=mp4a]"
-        f"/bestvideo[vcodec^=avc1][height<={h}]+bestaudio"
-        f"/bestvideo[height<={h}]+bestaudio[acodec^=mp4a]"
-        f"/bestvideo[height<={h}]+bestaudio"
+        f"bestvideo[height<={h}]+bestaudio"
         f"/best[height<={h}]/bestvideo+bestaudio/best"
     )
 
@@ -153,17 +297,17 @@ def build_ydl_opts(
     audio_only: bool,
     no_playlist: bool,
     outtmpl: str,
-    reencode: bool = False,
+    mode: str,
+    spinner: EncodingSpinner,
 ) -> dict:
     """
     yt-dlp に渡すオプション辞書を構築する。
 
-    音声のみモードの場合は MP3 320kbps で抽出する。
-    動画モードのデフォルトはストリームコピー（再エンコードなし）で高速マージする。
-    ``reencode=True`` の場合のみ libx264 + AAC で再エンコードする。
+    モードに応じて ffmpeg のエンコード戦略を切り替える。
 
-    **ストリームコピーが使える理由**: フォーマットセレクタが H.264 + AAC を
-    優先しているため、通常はコーデック変換が不要。マージのみなので数秒で完了する。
+    - ``"fast"``   : ストリームコピー（``-c copy``）。再エンコードなし・数秒
+    - ``"normal"`` : ``h264_videotoolbox``（Apple M1 ハードウェアエンコード）。数分
+    - ``"hq"``     : ``libx264 -preset slow``（ソフトウェア最高品質）。数十分
 
     :param quality: 解像度指定（``"best"`` または ``"1080"`` 等）
     :type quality: str
@@ -175,16 +319,19 @@ def build_ydl_opts(
     :type no_playlist: bool
     :param outtmpl: yt-dlp の出力ファイル名テンプレート
     :type outtmpl: str
-    :param reencode: True の場合は libx264 + AAC で再エンコードする（低速・高互換）
-    :type reencode: bool
+    :param mode: ダウンロードモード（``"fast"``, ``"normal"``, ``"hq"``）
+    :type mode: str
+    :param spinner: エンコード進捗表示用スピナー
+    :type spinner: EncodingSpinner
     :return: yt-dlp.YoutubeDL に渡すオプション辞書
     :rtype: dict
     """
     common = {
-        "outtmpl":        outtmpl,
-        "progress_hooks": [make_progress_hook()],
-        "noplaylist":     no_playlist,
-        "ignoreerrors":   True,
+        "outtmpl":             outtmpl,
+        "progress_hooks":      [make_progress_hook()],
+        "postprocessor_hooks": [make_postprocessor_hook(spinner)],
+        "noplaylist":          no_playlist,
+        "ignoreerrors":        True,
     }
 
     if audio_only:
@@ -200,7 +347,7 @@ def build_ydl_opts(
 
     opts: dict = {
         **common,
-        "format":              build_format_selector(quality),
+        "format":              build_format_selector(quality, mode),
         "merge_output_format": fmt,
         "postprocessors": [{
             "key":            "FFmpegVideoRemuxer",
@@ -208,34 +355,47 @@ def build_ydl_opts(
         }],
     }
 
-    if reencode:
-        # 明示的に --reencode を指定した場合のみ libx264 + AAC で変換する。
-        # VP9/AV1 動画を強制的に H.264 に変換したいときに使用。
-        # -preset fast : slow より高速（slow との画質差は軽微）
+    if mode == "fast":
+        # ストリームコピー: コンテナ詰め替えのみ、数秒で完了
+        opts["postprocessor_args"] = {
+            "ffmpeg": ["-c", "copy", "-movflags", "+faststart"]
+        }
+
+    elif mode == "normal":
+        # h264_videotoolbox: Apple M1/M2/M3 のハードウェアエンコーダー
+        # libx264 の 10〜20 倍高速で、品質も実用上十分。
+        # -q:v 55  : VideoToolbox の品質スケール（低いほど高品質、0〜100）
+        # -c:a aac : AAC エンコード（QuickTime 対応）
         opts["postprocessor_args"] = {
             "ffmpeg": [
-                "-c:v", "libx264", "-crf", FFMPEG_CRF, "-preset", "fast",
+                "-c:v", "h264_videotoolbox",
+                "-q:v", "55",
                 "-c:a", "aac", "-b:a", "192k",
                 "-movflags", "+faststart",
             ]
         }
-    else:
-        # デフォルト: ストリームコピー（再エンコードなし）
-        # H.264 + AAC がそのまま MP4 コンテナに詰め直されるだけなので数秒で完了。
+
+    else:  # hq
+        # libx264: ソフトウェアエンコード。最高品質だが M1 でも数十分かかる
+        # -crf 18     : 視覚的無劣化に近い高品質（0=無劣化 〜 51=最低）
+        # -preset slow: 時間をかけて高圧縮・高品質
         opts["postprocessor_args"] = {
-            "ffmpeg": ["-c", "copy", "-movflags", "+faststart"]
+            "ffmpeg": [
+                "-c:v", "libx264", "-crf", FFMPEG_CRF, "-preset", "slow",
+                "-c:a", "aac", "-b:a", "192k",
+                "-movflags", "+faststart",
+            ]
         }
 
     return opts
 
 
-# ── 進捗フック ─────────────────────────────────────────────────────────────────
+# ── ダウンロード進捗フック ────────────────────────────────────────────────────
 def make_progress_hook():
     """
     yt-dlp のダウンロード進捗を表示するフック関数を生成して返す。
 
-    フック関数はダウンロード中にプログレスバーを描画し、
-    マージ / 変換フェーズでは処理中メッセージを表示する。
+    フック関数はダウンロード中にプログレスバーを描画する。
 
     :return: yt-dlp の ``progress_hooks`` に渡すコールバック関数
     :rtype: callable
@@ -278,10 +438,6 @@ def make_progress_hook():
                 flush=True,
             )
 
-        elif status == "finished":
-            print()
-            info(f"マージ / 変換中: {Path(filename).name}")
-
         elif status == "error":
             print()
             error("ダウンロードに失敗しました。")
@@ -296,7 +452,7 @@ def download(
     fmt: str,
     audio_only: bool,
     no_playlist: bool,
-    reencode: bool = False,
+    mode: str,
 ) -> None:
     """
     指定した URL の動画（またはプレイリスト）をダウンロードする。
@@ -314,28 +470,34 @@ def download(
     :type audio_only: bool
     :param no_playlist: True の場合はプレイリスト URL でも先頭1件のみ取得する
     :type no_playlist: bool
-    :param reencode: True の場合は libx264 + AAC で再エンコードする（低速・高互換）
-    :type reencode: bool
+    :param mode: ダウンロードモード（``"fast"``, ``"normal"``, ``"hq"``）
+    :type mode: str
     :return: None
     :raises SystemExit: ダウンロードエラーまたはユーザー中断時
     """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     outtmpl = str(OUTPUT_DIR / "%(title)s.%(ext)s")
 
+    MODE_LABELS = {
+        "fast":   (c("高速", "green"),   c("ストリームコピー（再エンコードなし・最大 1080p）", "green")),
+        "normal": (c("標準（推奨）", "yellow"), c("h264_videotoolbox ハードウェアエンコード（M1 最適化）", "yellow")),
+        "hq":     (c("最高品質", "red"),  c("libx264 ソフトウェアエンコード（低速・高品質）", "red")),
+    }
+
     if audio_only:
         info("モード: 音声のみ (MP3 320kbps)")
     else:
-        info(f"モード: 動画  品質={c(quality,'bold')}  形式={c(fmt.upper(),'bold')}")
-        merge_mode = c("再エンコード (libx264)", "yellow") if reencode else c(
-            "ストリームコピー（高速）", "green")
-        info(f"マージ方式: {merge_mode}")
-        info("コーデック: H.264 + AAC 優先（QuickTime 互換）")
+        label, desc = MODE_LABELS[mode]
+        info(f"モード: {label}  品質={c(quality,'bold')}  形式={c(fmt.upper(),'bold')}")
+        info(f"エンコード: {desc}")
 
     info(f"出力先: {OUTPUT_DIR}/")
     print()
 
-    ydl_opts = build_ydl_opts(quality, fmt, audio_only,
-                              no_playlist, outtmpl, reencode)
+    spinner = EncodingSpinner()
+    ydl_opts = build_ydl_opts(
+        quality, fmt, audio_only, no_playlist, outtmpl, mode, spinner
+    )
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
@@ -350,6 +512,7 @@ def download(
         sys.exit(1)
     except KeyboardInterrupt:
         print()
+        spinner._stop_evt.set()  # スピナーが動いていれば停止
         warn("ユーザーによって中断されました。")
         sys.exit(130)
 
@@ -358,6 +521,9 @@ def download(
 def parse_args() -> argparse.Namespace:
     """
     コマンドライン引数を解析して返す。
+
+    モードフラグ (``--fast``, ``--hq``) は排他オプショングループで管理し、
+    同時指定はエラーとなる。
 
     .. note::
         URL に ``?`` が含まれる場合、zsh がワイルドカードとして解釈するため
@@ -372,12 +538,23 @@ def parse_args() -> argparse.Namespace:
             "🎬  yt-dlp を使った YouTube 動画ダウンローダー（QuickTime 対応）", "bold"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
+モード:
+  デフォルト  最高画質DL + h264_videotoolbox（M1ハード）。数分。【推奨】
+  --fast      H.264ストリームコピー。数秒。最大1080p。
+  --hq        最高画質DL + libx264 slow。数十分。最高品質。
+
 使用例:
-  # 最高品質で MP4（QuickTime 再生可能）
+  # 標準モード（推奨）
   python yt_downloader.py "https://youtu.be/xxxxx"
 
-  # 解像度・形式を指定
-  python yt_downloader.py "https://youtu.be/xxxxx" -q 1080 -f mp4
+  # 高速モード
+  python yt_downloader.py "https://youtu.be/xxxxx" --fast
+
+  # 最高品質モード（時間がかかっても良い場合）
+  python yt_downloader.py "https://youtu.be/xxxxx" --hq
+
+  # 解像度を指定
+  python yt_downloader.py "https://youtu.be/xxxxx" -q 1080
 
   # プレイリスト全体をダウンロード
   python yt_downloader.py "https://www.youtube.com/playlist?list=xxxxx"
@@ -385,10 +562,8 @@ def parse_args() -> argparse.Namespace:
   # 音声のみ MP3
   python yt_downloader.py "https://youtu.be/xxxxx" --audio-only
 
-  # プレイリスト URL でも1本だけ
-  python yt_downloader.py "https://youtu.be/xxxxx" --no-playlist
-
 ⚠️  URL は必ずクォートで囲んでください（zsh の ? 展開を防ぐため）
+⚠️  brew install node を実行しておくと全フォーマットが取得できます
 
 指定可能な品質: {', '.join(QUALITY_OPTIONS)}
 指定可能な形式: {', '.join(FORMAT_OPTIONS)}
@@ -423,10 +598,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="プレイリスト URL でも最初の1本だけダウンロードする",
     )
-    parser.add_argument(
-        "--reencode",
+
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--fast",
         action="store_true",
-        help="libx264 + AAC で再エンコードする（低速。VP9/AV1 を強制変換したい場合に使用）",
+        help="高速モード: H.264ストリームコピー（再エンコードなし・最大1080p相当）",
+    )
+    mode_group.add_argument(
+        "--hq",
+        action="store_true",
+        help="最高品質モード: libx264 preset slow（低速・高品質）",
     )
 
     return parser.parse_args()
@@ -444,13 +626,21 @@ def main() -> None:
     print(c("══════════════════════════════════════════\n", "cyan"))
 
     args = parse_args()
+
+    if args.fast:
+        mode = "fast"
+    elif args.hq:
+        mode = "hq"
+    else:
+        mode = "normal"
+
     download(
         url=args.url,
         quality=args.quality,
         fmt=args.format,
         audio_only=args.audio_only,
         no_playlist=args.no_playlist,
-        reencode=args.reencode,
+        mode=mode,
     )
 
 
