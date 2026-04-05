@@ -153,13 +153,17 @@ def build_ydl_opts(
     audio_only: bool,
     no_playlist: bool,
     outtmpl: str,
+    reencode: bool = False,
 ) -> dict:
     """
     yt-dlp に渡すオプション辞書を構築する。
 
     音声のみモードの場合は MP3 320kbps で抽出する。
-    動画モードの場合は QuickTime 互換コーデック（H.264 + AAC）を優先し、
-    非対応コーデックが混入した場合は ffmpeg で H.264 + AAC に変換する。
+    動画モードのデフォルトはストリームコピー（再エンコードなし）で高速マージする。
+    ``reencode=True`` の場合のみ libx264 + AAC で再エンコードする。
+
+    **ストリームコピーが使える理由**: フォーマットセレクタが H.264 + AAC を
+    優先しているため、通常はコーデック変換が不要。マージのみなので数秒で完了する。
 
     :param quality: 解像度指定（``"best"`` または ``"1080"`` 等）
     :type quality: str
@@ -171,6 +175,8 @@ def build_ydl_opts(
     :type no_playlist: bool
     :param outtmpl: yt-dlp の出力ファイル名テンプレート
     :type outtmpl: str
+    :param reencode: True の場合は libx264 + AAC で再エンコードする（低速・高互換）
+    :type reencode: bool
     :return: yt-dlp.YoutubeDL に渡すオプション辞書
     :rtype: dict
     """
@@ -192,28 +198,35 @@ def build_ydl_opts(
             }],
         }
 
-    return {
+    opts: dict = {
         **common,
         "format":              build_format_selector(quality),
         "merge_output_format": fmt,
-        # H.264 + AAC でない場合に ffmpeg で変換する
-        # -c:v libx264   : H.264 エンコード
-        # -crf 18        : 視覚的無劣化に近い高品質（0=無劣化 〜 51=最低品質）
-        # -preset slow   : エンコード時間をかけて圧縮率を高める
-        # -c:a aac       : AAC エンコード（QuickTime 対応）
-        # -movflags      : MP4 先頭にメタデータを配置（Web 再生最適化）
-        "postprocessor_args": {
-            "ffmpeg": [
-                "-c:v", "libx264", "-crf", FFMPEG_CRF, "-preset", "slow",
-                "-c:a", "aac", "-b:a", "192k",
-                "-movflags", "+faststart",
-            ]
-        },
         "postprocessors": [{
             "key":            "FFmpegVideoRemuxer",
             "preferedformat": fmt,
         }],
     }
+
+    if reencode:
+        # 明示的に --reencode を指定した場合のみ libx264 + AAC で変換する。
+        # VP9/AV1 動画を強制的に H.264 に変換したいときに使用。
+        # -preset fast : slow より高速（slow との画質差は軽微）
+        opts["postprocessor_args"] = {
+            "ffmpeg": [
+                "-c:v", "libx264", "-crf", FFMPEG_CRF, "-preset", "fast",
+                "-c:a", "aac", "-b:a", "192k",
+                "-movflags", "+faststart",
+            ]
+        }
+    else:
+        # デフォルト: ストリームコピー（再エンコードなし）
+        # H.264 + AAC がそのまま MP4 コンテナに詰め直されるだけなので数秒で完了。
+        opts["postprocessor_args"] = {
+            "ffmpeg": ["-c", "copy", "-movflags", "+faststart"]
+        }
+
+    return opts
 
 
 # ── 進捗フック ─────────────────────────────────────────────────────────────────
@@ -283,6 +296,7 @@ def download(
     fmt: str,
     audio_only: bool,
     no_playlist: bool,
+    reencode: bool = False,
 ) -> None:
     """
     指定した URL の動画（またはプレイリスト）をダウンロードする。
@@ -300,6 +314,8 @@ def download(
     :type audio_only: bool
     :param no_playlist: True の場合はプレイリスト URL でも先頭1件のみ取得する
     :type no_playlist: bool
+    :param reencode: True の場合は libx264 + AAC で再エンコードする（低速・高互換）
+    :type reencode: bool
     :return: None
     :raises SystemExit: ダウンロードエラーまたはユーザー中断時
     """
@@ -310,12 +326,16 @@ def download(
         info("モード: 音声のみ (MP3 320kbps)")
     else:
         info(f"モード: 動画  品質={c(quality,'bold')}  形式={c(fmt.upper(),'bold')}")
+        merge_mode = c("再エンコード (libx264)", "yellow") if reencode else c(
+            "ストリームコピー（高速）", "green")
+        info(f"マージ方式: {merge_mode}")
         info("コーデック: H.264 + AAC 優先（QuickTime 互換）")
 
     info(f"出力先: {OUTPUT_DIR}/")
     print()
 
-    ydl_opts = build_ydl_opts(quality, fmt, audio_only, no_playlist, outtmpl)
+    ydl_opts = build_ydl_opts(quality, fmt, audio_only,
+                              no_playlist, outtmpl, reencode)
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
@@ -403,6 +423,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="プレイリスト URL でも最初の1本だけダウンロードする",
     )
+    parser.add_argument(
+        "--reencode",
+        action="store_true",
+        help="libx264 + AAC で再エンコードする（低速。VP9/AV1 を強制変換したい場合に使用）",
+    )
 
     return parser.parse_args()
 
@@ -425,6 +450,7 @@ def main() -> None:
         fmt=args.format,
         audio_only=args.audio_only,
         no_playlist=args.no_playlist,
+        reencode=args.reencode,
     )
 
 
