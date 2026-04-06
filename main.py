@@ -396,7 +396,8 @@ def make_postprocessor_hook(spinner: EncodingSpinner):
             elif status == "finished":
                 spinner.stop()
                 # マージ・変換完了 = その動画のダウンロード成功
-                spinner.tracker.record_success()
+                if spinner.tracker is not None:
+                    spinner.tracker.record_success()
 
     return hook
 
@@ -551,13 +552,13 @@ def build_ydl_opts(
 
 
 # ── ダウンロード進捗フック ────────────────────────────────────────────────────
-def make_progress_hook(tracker: "DownloadTracker"):
+def make_progress_hook(tracker: "DownloadTracker | None"):
     """
     yt-dlp のダウンロード進捗を表示しつつ、成功した動画を DownloadTracker に記録する
     フック関数を生成して返す。
 
     :param tracker: 成功記録を委譲する DownloadTracker インスタンス
-    :type tracker: DownloadTracker
+    :type tracker: DownloadTracker | None
     :return: yt-dlp の ``progress_hooks`` に渡すコールバック関数
     :rtype: callable
     """
@@ -576,7 +577,7 @@ def make_progress_hook(tracker: "DownloadTracker"):
         info_dict = d.get("info_dict", {})
 
         # 動画情報が取れたタイミングで tracker の現在動画を更新する
-        if info_dict:
+        if info_dict and tracker is not None:
             tracker.set_current(info_dict)
 
         if status == "downloading":
@@ -668,7 +669,7 @@ def download(
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
-            ret = ydl.download([url])
+            _ = ydl.download([url])
         # 結果サマリーを表示（プレイリストの場合は特に有用）
         tracker.print_summary()
         if not tracker.failed:
