@@ -87,23 +87,40 @@ class DownloadTracker:
 
     def record_success(self) -> None:
         """
-        現在処理中の動画を成功リストに追加する。postprocessor_hook から呼ばれる。
+        現在処理中の動画を成功リストに追加する。
+
+        映像・音声の2ファイルで複数回呼ばれることがあるため、
+        動画IDベースで重複チェックを行う。
 
         :return: None
         """
-        if self._current and self._current not in self.succeeded:
+        if not self._current:
+            return
+        vid_id = self._current.get("id", "")
+        already = any(v.get("id") == vid_id for v in self.succeeded)
+        if not already:
             self.succeeded.append(dict(self._current))
 
     def record_failure(self, reason: str) -> None:
         """
         現在処理中の動画を失敗リストに追加する。カスタムロガーから呼ばれる。
 
+        同じ動画IDで複数回エラーが来ることがあるため、IDベースで重複チェックする。
+        また、失敗した動画が誤って成功リストに入っている場合は除去する。
+
         :param reason: yt-dlp が報告したエラーメッセージ
         :type reason: str
         :return: None
         """
-        entry = {**self._current, "reason": reason}
-        if entry not in self.failed:
+        if not self._current:
+            return
+        vid_id = self._current.get("id", "")
+        # 誤って成功リストに入っていれば除去
+        self.succeeded = [v for v in self.succeeded if v.get("id") != vid_id]
+        # 失敗リストへ追加（重複チェック）
+        already = any(v.get("id") == vid_id for v in self.failed)
+        if not already:
+            entry = {**self._current, "reason": reason}
             self.failed.append(entry)
 
     def print_summary(self) -> None:
@@ -170,18 +187,45 @@ class YtDlpLogger:
 
     def debug(self, msg: str) -> None:
         """
-        デバッグメッセージを処理する（抑制）。
+        デバッグメッセージを処理する。
 
-        yt-dlp は通常の情報ログも debug() 経由で送るため、
-        ``[download]`` や ``[info]`` を含む行は標準出力にそのまま表示する。
+        yt-dlp は通常の情報ログも debug() 経由で送るため、種別ごとに処理を分ける。
+
+        - ``[download]`` の進捗行（``% of`` を含む行）は **抑制** する。
+          progress_hook が ``
+`` 上書きで1行表示するため二重出力になるのを防ぐ。
+        - ``[Merger]`` / ``[info]`` / ``[VideoRemuxer]`` 等の構造的なログは
+          進捗バー行を消してから表示する。
 
         :param msg: yt-dlp からのデバッグメッセージ
         :type msg: str
         :return: None
         """
-        # [download] / [info] / [Merger] 等の通常ログはそのまま表示
-        if msg.startswith("["):
+        CLEAR = "\r" + " " * 80 + "\r"
+
+        if not msg.startswith("["):
+            return  # 内部デバッグは抑制
+
+        # [download] の進捗行（"% of" を含む）は progress_hook に任せて抑制
+        if msg.startswith("[download]") and "% of" in msg:
+            return
+
+        # [download] Downloading item N of M はプレイリスト進捗として表示
+        if msg.startswith("[download]") and "Downloading item" in msg:
+            print(CLEAR, end="")
+            print(c("\n" + msg, "cyan"))
+            return
+
+        # Merger / VideoRemuxer / info 等: 進捗バー行を消してから表示
+        structural = ("[Merger]", "[VideoRemuxer]",
+                      "[info]", "[youtube]", "[ffmpeg]")
+        if any(msg.startswith(p) for p in structural):
+            print(CLEAR, end="")
             print(msg)
+            return
+
+        # その他の [ 始まりログはそのまま表示
+        print(msg)
 
     def warning(self, msg: str) -> None:
         """
@@ -581,9 +625,13 @@ def make_progress_hook(tracker: "DownloadTracker | None"):
             tracker.set_current(info_dict)
 
         if status == "downloading":
+            # ファイルが切り替わったときだけファイル名行を1回だけ表示
             if filename != last_filename[0]:
                 last_filename[0] = filename
-                print(c(f"\n  ▶ {Path(filename).name}", "bold"))
+                short = Path(filename).name
+                # 前の進捗バー行を消してからファイル名を出力
+                print(f"\r{' ' * 80}\r", end="")
+                print(c(f"  ▶ {short}", "bold"))
 
             percent = d.get("_percent_str",  "  ?%").strip()
             speed = d.get("_speed_str",    "?/s").strip()
@@ -595,15 +643,26 @@ def make_progress_hook(tracker: "DownloadTracker | None"):
             bar_val = d.get("downloaded_bytes", 0)
             bar_total = d.get("total_bytes") or d.get(
                 "total_bytes_estimate") or 1
-            bar_width = 30
+            bar_width = 36
             filled = int(bar_width * bar_val / bar_total)
             bar = "█" * filled + "░" * (bar_width - filled)
+            # \r で行頭に戻って上書き → 同じ1行がパーセントだけ変化して見える
             print(
                 f"\r  [{bar}] {c(percent,'green')}  {total}"
-                f"  {c(speed,'cyan')}  ETA {eta}   ",
+                f"  {c(speed,'cyan')}  ETA {c(eta,'yellow')}   ",
                 end="",
                 flush=True,
             )
+
+        elif status == "finished":
+            # ダウンロード完了時に進捗バー行を改行して確定表示
+            print()
+            # ファイル単体のダウンロード成功を仮記録する。
+            # プレイリストでは映像・音声の2ファイルで計2回呼ばれるが、
+            # record_success は重複チェック済みなので問題ない。
+            # postprocessor_hook の "finished" も呼ばれる場合は重複になるが無害。
+            if tracker is not None and tracker._current:
+                tracker.record_success()
 
         elif status == "error":
             print()
