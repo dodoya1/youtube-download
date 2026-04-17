@@ -23,16 +23,18 @@ yt_downloader.py - yt-dlp を使った YouTube 動画ダウンローダー。
 """
 
 import argparse
+import re
 import sys
 import threading
 import time
 from pathlib import Path
 
 import yt_dlp
-from yt_dlp.utils import DownloadError
+from yt_dlp.utils import DateRange, DownloadError
 
 # ── 定数 ──────────────────────────────────────────────────────────────────────
 OUTPUT_DIR = Path(__file__).parent / "downloads"
+ARCHIVE_DIR = OUTPUT_DIR / ".archive"
 
 QUALITY_OPTIONS = ["best", "2160", "1440",
                    "1080", "720", "480", "360", "240", "144"]
@@ -247,6 +249,47 @@ class YtDlpLogger:
         """
         print(c(f"[ERROR] {msg}", "red"), file=sys.stderr)
         self.tracker.record_failure(msg)
+
+
+# ── URL 種別判定 ─────────────────────────────────────────────────────────────
+_CHANNEL_PATTERNS = (
+    r"youtube\.com/@([\w\-]+)",
+    r"youtube\.com/channel/([\w\-]+)",
+    r"youtube\.com/c/([\w\-]+)",
+    r"youtube\.com/user/([\w\-]+)",
+)
+
+
+def detect_url_type(url: str) -> str:
+    """
+    YouTube URL の種別を判定する。
+
+    :param url: YouTube URL
+    :type url: str
+    :return: ``"channel"`` / ``"playlist"`` / ``"video"``
+    :rtype: str
+    """
+    if any(re.search(p, url) for p in _CHANNEL_PATTERNS):
+        return "channel"
+    if re.search(r"youtube\.com/playlist\?list=", url):
+        return "playlist"
+    return "video"
+
+
+def extract_channel_name(url: str) -> str:
+    """
+    チャンネル URL からディレクトリ名に使う識別子を抽出する。
+
+    :param url: YouTube チャンネル URL
+    :type url: str
+    :return: チャンネル識別子（``@username`` の ``username`` 部分等）
+    :rtype: str
+    """
+    for pattern in _CHANNEL_PATTERNS:
+        m = re.search(pattern, url)
+        if m:
+            return m.group(1)
+    return "unknown_channel"
 
 
 # ── ユーティリティ ────────────────────────────────────────────────────────────
@@ -501,6 +544,9 @@ def build_ydl_opts(
     outtmpl: str,
     mode: str,
     spinner: EncodingSpinner,
+    archive_path: str | None = None,
+    date_range: DateRange | None = None,
+    playlist_items: str | None = None,
 ) -> dict:
     """
     yt-dlp に渡すオプション辞書を構築する。
@@ -525,6 +571,12 @@ def build_ydl_opts(
     :type mode: str
     :param spinner: エンコード進捗表示用スピナー
     :type spinner: EncodingSpinner
+    :param archive_path: ダウンロード済み動画IDを記録するファイルパス（省略可）
+    :type archive_path: str | None
+    :param date_range: アップロード日のフィルタ範囲（省略可）
+    :type date_range: DateRange | None
+    :param playlist_items: ダウンロードする動画のインデックス範囲（例: ``"1:10"``）
+    :type playlist_items: str | None
     :return: yt-dlp.YoutubeDL に渡すオプション辞書
     :rtype: dict
     """
@@ -538,6 +590,12 @@ def build_ydl_opts(
         "noplaylist":          no_playlist,
         "ignoreerrors":        True,
     }
+    if archive_path is not None:
+        common = {**common, "download_archive": archive_path, "break_on_existing": True}
+    if date_range is not None:
+        common = {**common, "daterange": date_range}
+    if playlist_items is not None:
+        common = {**common, "playlist_items": playlist_items}
 
     if audio_only:
         return {
@@ -679,12 +737,16 @@ def download(
     audio_only: bool,
     no_playlist: bool,
     mode: str,
+    date_after: str | None = None,
+    date_before: str | None = None,
+    limit: int | None = None,
+    use_archive: bool = False,
 ) -> None:
     """
-    指定した URL の動画（またはプレイリスト）をダウンロードする。
+    指定した URL の動画（またはプレイリスト、チャンネル）をダウンロードする。
 
-    ダウンロード先は OUTPUT_DIR 定数で指定されたフォルダ。
-    フォルダが存在しない場合は自動的に作成する。
+    チャンネル URL の場合はサブディレクトリに出力し、ダウンロードアーカイブを
+    自動的に有効にして再実行時にダウンロード済み動画をスキップする。
 
     :param url: ダウンロード対象の YouTube URL
     :type url: str
@@ -698,11 +760,58 @@ def download(
     :type no_playlist: bool
     :param mode: ダウンロードモード（``"fast"``, ``"normal"``, ``"hq"``）
     :type mode: str
+    :param date_after: 指定日以降の動画のみ取得（``YYYYMMDD`` 形式）
+    :type date_after: str | None
+    :param date_before: 指定日以前の動画のみ取得（``YYYYMMDD`` 形式）
+    :type date_before: str | None
+    :param limit: ダウンロードする最大件数
+    :type limit: int | None
+    :param use_archive: プレイリストでもダウンロード済みスキップを有効にする
+    :type use_archive: bool
     :return: None
     :raises SystemExit: ダウンロードエラーまたはユーザー中断時
     """
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    outtmpl = str(OUTPUT_DIR / "%(title)s.%(ext)s")
+    url_type = detect_url_type(url)
+
+    # チャンネル URL では --no-playlist は無意味（yt-dlp 内部でプレイリスト扱い）
+    if url_type == "channel" and no_playlist:
+        warn("チャンネル URL では --no-playlist は無視されます")
+        no_playlist = False
+
+    # 出力先とアーカイブパスの決定
+    if url_type == "channel":
+        channel_name = extract_channel_name(url)
+        out_dir = OUTPUT_DIR / channel_name
+        ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+        archive_path: str | None = str(ARCHIVE_DIR / f"{channel_name}.txt")
+    elif url_type == "playlist" and use_archive:
+        out_dir = OUTPUT_DIR
+        ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+        archive_path = str(ARCHIVE_DIR / "playlists.txt")
+    else:
+        out_dir = OUTPUT_DIR
+        archive_path = None
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    outtmpl = str(out_dir / "%(title)s.%(ext)s")
+
+    # 日付フィルタの構築
+    for date_str, date_label in (
+        (date_after, "--date-after"), (date_before, "--date-before"),
+    ):
+        if date_str is not None and not re.fullmatch(r"\d{8}", date_str):
+            error(f"{date_label} の形式が不正です（YYYYMMDD で指定してください）: {date_str}")
+            sys.exit(1)
+
+    date_range_obj: DateRange | None = None
+    if date_after is not None or date_before is not None:
+        date_range_obj = DateRange(start=date_after, end=date_before)
+
+    playlist_items = f"1:{limit}" if limit is not None else None
+
+    # 情報表示
+    if url_type == "channel":
+        info(f"チャンネル検出: {c(channel_name, 'bold')}")
 
     MODE_LABELS = {
         "fast":   (c("高速", "green"),   c("ストリームコピー（再エンコードなし・最大 1080p）", "green")),
@@ -713,17 +822,29 @@ def download(
     if audio_only:
         info("モード: 音声のみ (MP3 320kbps)")
     else:
-        label, desc = MODE_LABELS[mode]
-        info(f"モード: {label}  品質={c(quality,'bold')}  形式={c(fmt.upper(),'bold')}")
+        mode_label, desc = MODE_LABELS[mode]
+        info(f"モード: {mode_label}  品質={c(quality,'bold')}  形式={c(fmt.upper(),'bold')}")
         info(f"エンコード: {desc}")
 
-    info(f"出力先: {OUTPUT_DIR}/")
+    if archive_path is not None:
+        info(f"アーカイブ: {c(archive_path, 'bold')}  (ダウンロード済み動画はスキップ)")
+    if date_after is not None:
+        info(f"日付フィルタ: {c(date_after, 'bold')} 以降")
+    if date_before is not None:
+        info(f"日付フィルタ: {c(date_before, 'bold')} 以前")
+    if limit is not None:
+        info(f"ダウンロード上限: {c(str(limit), 'bold')} 件")
+
+    info(f"出力先: {out_dir}/")
     print()
 
     tracker = DownloadTracker()
     spinner = EncodingSpinner(tracker=tracker)
     ydl_opts = build_ydl_opts(
-        quality, fmt, audio_only, no_playlist, outtmpl, mode, spinner
+        quality, fmt, audio_only, no_playlist, outtmpl, mode, spinner,
+        archive_path=archive_path,
+        date_range=date_range_obj,
+        playlist_items=playlist_items,
     )
 
     try:
@@ -790,6 +911,15 @@ def parse_args() -> argparse.Namespace:
   # プレイリスト全体をダウンロード
   python yt_downloader.py "https://www.youtube.com/playlist?list=xxxxx"
 
+  # チャンネル全動画をダウンロード
+  python yt_downloader.py "https://www.youtube.com/@username/videos"
+
+  # チャンネルから最新 10 件のみ
+  python yt_downloader.py "https://www.youtube.com/@username" --limit 10
+
+  # 2025年以降の動画のみ
+  python yt_downloader.py "https://www.youtube.com/@username" --date-after 20250101
+
   # 音声のみ MP3
   python yt_downloader.py "https://youtu.be/xxxxx" --audio-only
 
@@ -828,6 +958,27 @@ def parse_args() -> argparse.Namespace:
         "--no-playlist",
         action="store_true",
         help="プレイリスト URL でも最初の1本だけダウンロードする",
+    )
+    parser.add_argument(
+        "--date-after",
+        metavar="DATE",
+        help="指定日以降にアップロードされた動画のみ取得 (形式: YYYYMMDD)",
+    )
+    parser.add_argument(
+        "--date-before",
+        metavar="DATE",
+        help="指定日以前にアップロードされた動画のみ取得 (形式: YYYYMMDD)",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        metavar="N",
+        help="チャンネル/プレイリストから最大 N 件だけダウンロード",
+    )
+    parser.add_argument(
+        "--archive",
+        action="store_true",
+        help="ダウンロード済み動画を記録し、再実行時にスキップする（チャンネルは自動有効）",
     )
 
     mode_group = parser.add_mutually_exclusive_group()
@@ -872,6 +1023,10 @@ def main() -> None:
         audio_only=args.audio_only,
         no_playlist=args.no_playlist,
         mode=mode,
+        date_after=args.date_after,
+        date_before=args.date_before,
+        limit=args.limit,
+        use_archive=args.archive,
     )
 
 
