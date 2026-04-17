@@ -793,7 +793,8 @@ def download(
         archive_path = None
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    outtmpl = str(out_dir / "%(title)s.%(ext)s")
+    # 同名タイトルの動画が衝突しないよう動画IDを付加する
+    outtmpl = str(out_dir / "%(title)s [%(id)s].%(ext)s")
 
     # 日付フィルタの構築
     for date_str, date_label in (
