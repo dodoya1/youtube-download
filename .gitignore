@@ -1,2 +1,30 @@
+# macOS
 .DS_Store
+
+# ダウンロード出力
 downloads/
+
+# Python 仮想環境
+.venv/
+venv/
+
+# Python キャッシュ・ビルド成果物
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# ツールキャッシュ
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# エディタ
+.vscode/
+.idea/
+*.swp

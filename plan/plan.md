@@ -36,13 +36,13 @@
 
 インフラのみ。コード変更なし。
 
-- [ ] `pyproject.toml` を新規作成
+- [x] `pyproject.toml` を新規作成
   - `[project]`: name="yt-downloader", version="1.0.0", requires-python=">=3.10", dependencies=["yt-dlp"]
   - `[project.scripts]`: `yt-downloader = "yt_downloader.cli:main"`
   - `[tool.pytest.ini_options]`: testpaths=["tests"]
   - `[build-system]`: hatchling を使用
   - `[dependency-groups]`: dev = ["pytest", "pytest-cov"]
-- [ ] `.gitignore` を拡充
+- [x] `.gitignore` を拡充
   - 追加: `.venv/`, `__pycache__/`, `*.pyc`, `*.pyo`, `.mypy_cache/`, `.pytest_cache/`, `*.egg-info/`, `dist/`, `build/`, `.ruff_cache/`
 
 **変更ファイル**: `pyproject.toml` (新規), `.gitignore` (修正)
