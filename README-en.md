@@ -22,12 +22,12 @@ It supports the M1 Mac hardware encoder (`h264_videotoolbox`) to achieve both hi
 
 ## 📋 Requirements
 
-| Tool           | Purpose                                   | Install                                           |
-| -------------- | ----------------------------------------- | ------------------------------------------------- |
-| Python 3.10+   | Runs the script                           | [python.org](https://www.python.org/)             |
-| uv             | Virtual env & package management          | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| ffmpeg         | Video/audio merge & conversion            | `brew install ffmpeg`                             |
-| Node.js        | Fetching YouTube format list (required)   | `brew install node`                               |
+| Tool         | Purpose                                 | Install                                            |
+| ------------ | --------------------------------------- | -------------------------------------------------- |
+| Python 3.10+ | Runs the script                         | [python.org](https://www.python.org/)              |
+| uv           | Virtual env & package management        | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| ffmpeg       | Video/audio merge & conversion          | `brew install ffmpeg`                              |
+| Node.js      | Fetching YouTube format list (required) | `brew install node`                                |
 
 > ⚠️ **Without Node.js, yt-dlp cannot retrieve all available formats and video quality drops significantly.**
 > Make sure to run `brew install node` before using this tool.
@@ -137,18 +137,18 @@ python main.py "https://youtu.be/xxxxx" -f mkv
 
 ## ⚙️ Options
 
-| Option          | Short  | Default   | Description                                                                                   |
-| --------------- | ------ | --------- | --------------------------------------------------------------------------------------------- |
-| `--quality`     | `-q`   | `best`    | Resolution (`best` / `2160` / `1440` / `1080` / `720` / `480` / `360` / `240` / `144`)        |
-| `--format`      | `-f`   | `mp4`     | Output format (`mp4` / `mkv` / `webm`)                                                        |
-| `--fast`        | —      | `false`   | Fast mode (H.264 stream copy)                                                                 |
-| `--hq`          | —      | `false`   | Maximum quality mode (libx264 preset medium)                                                  |
-| `--audio-only`  | —      | `false`   | Extract audio only as MP3 320kbps                                                             |
-| `--no-playlist` | —      | `false`   | Download only the first entry, even from a playlist URL                                       |
-| `--date-after`  | —      | —         | Only videos uploaded on/after this date (format: `YYYYMMDD`)                                  |
-| `--date-before` | —      | —         | Only videos uploaded on/before this date (format: `YYYYMMDD`)                                 |
-| `--limit`       | —      | —         | Download at most N videos from a channel/playlist                                             |
-| `--archive`     | —      | `false`   | Record downloaded videos and skip them on re-run (enabled automatically for channels)         |
+| Option          | Short | Default | Description                                                                            |
+| --------------- | ----- | ------- | -------------------------------------------------------------------------------------- |
+| `--quality`     | `-q`  | `best`  | Resolution (`best` / `2160` / `1440` / `1080` / `720` / `480` / `360` / `240` / `144`) |
+| `--format`      | `-f`  | `mp4`   | Output format (`mp4` / `mkv` / `webm`)                                                 |
+| `--fast`        | —     | `false` | Fast mode (H.264 stream copy)                                                          |
+| `--hq`          | —     | `false` | Maximum quality mode (libx264 preset medium)                                           |
+| `--audio-only`  | —     | `false` | Extract audio only as MP3 320kbps                                                      |
+| `--no-playlist` | —     | `false` | Download only the first entry, even from a playlist URL                                |
+| `--date-after`  | —     | —       | Only videos uploaded on/after this date (format: `YYYYMMDD`)                           |
+| `--date-before` | —     | —       | Only videos uploaded on/before this date (format: `YYYYMMDD`)                          |
+| `--limit`       | —     | —       | Download at most N videos from a channel/playlist                                      |
+| `--archive`     | —     | `false` | Record downloaded videos and skip them on re-run (enabled automatically for channels)  |
 
 > `--fast` and `--hq` cannot be used together.
 
@@ -156,11 +156,11 @@ python main.py "https://youtu.be/xxxxx" -f mkv
 
 ## 🎛️ Encoding mode comparison
 
-| Mode                 | Command  | Encoder                | Typical time | Max quality  | QuickTime |
-| -------------------- | -------- | ---------------------- | ------------ | ------------ | --------- |
-| Fast                 | `--fast` | Stream copy            | Seconds      | ~1080p       | ✅        |
-| **Standard (recommended)** | _(none)_ | **h264_videotoolbox** | **Minutes**  | **4K**       | **✅**    |
-| Max quality          | `--hq`   | libx264 medium         | Tens of min. | 4K           | ✅        |
+| Mode                       | Command  | Encoder               | Typical time | Max quality | QuickTime |
+| -------------------------- | -------- | --------------------- | ------------ | ----------- | --------- |
+| Fast                       | `--fast` | Stream copy           | Seconds      | ~1080p      | ✅        |
+| **Standard (recommended)** | _(none)_ | **h264_videotoolbox** | **Minutes**  | **4K**      | **✅**    |
+| Max quality                | `--hq`   | libx264 medium        | Tens of min. | 4K          | ✅        |
 
 > Actual time depends on video length, resolution, and hardware.
 > On an M1 Mac with 8GB RAM, a 3-hour 4K video typically takes 5–15 minutes in standard mode.
@@ -257,13 +257,13 @@ Please use this tool in compliance with YouTube's Terms of Service.
 
 ## 🛠️ Troubleshooting
 
-| Symptom                                 | Cause                                         | Fix                                             |
-| --------------------------------------- | --------------------------------------------- | ----------------------------------------------- |
-| `zsh: no matches found`                 | `?` in the URL was expanded                   | Wrap the URL in quotes                          |
-| Quality capped at 1080p                 | Node.js is not installed                      | `brew install node`                             |
-| `ffmpeg: command not found`             | ffmpeg is not installed                       | `brew install ffmpeg`                           |
-| Merger never finishes                   | Long video being re-encoded in `--hq` mode    | Use standard mode (no option)                   |
-| Won't play in QuickTime                 | Output contains VP9/AV1 codec                 | Re-download with `--hq` or standard mode        |
+| Symptom                     | Cause                                      | Fix                                      |
+| --------------------------- | ------------------------------------------ | ---------------------------------------- |
+| `zsh: no matches found`     | `?` in the URL was expanded                | Wrap the URL in quotes                   |
+| Quality capped at 1080p     | Node.js is not installed                   | `brew install node`                      |
+| `ffmpeg: command not found` | ffmpeg is not installed                    | `brew install ffmpeg`                    |
+| Merger never finishes       | Long video being re-encoded in `--hq` mode | Use standard mode (no option)            |
+| Won't play in QuickTime     | Output contains VP9/AV1 codec              | Re-download with `--hq` or standard mode |
 
 ---
 

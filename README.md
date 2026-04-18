@@ -147,7 +147,7 @@ python main.py "https://youtu.be/xxxxx" -f mkv
 | `--no-playlist` | —      | `false`    | プレイリスト URL でも先頭 1 件のみ取得                                                    |
 | `--date-after`  | —      | —          | 指定日以降の動画のみ取得（形式: `YYYYMMDD`）                                              |
 | `--date-before` | —      | —          | 指定日以前の動画のみ取得（形式: `YYYYMMDD`）                                              |
-| `--limit`       | —      | —          | チャンネル/プレイリストから最大 N 件だけダウンロード                                       |
+| `--limit`       | —      | —          | チャンネル/プレイリストから最大 N 件だけダウンロード                                      |
 | `--archive`     | —      | `false`    | ダウンロード済み動画を記録し再実行時にスキップ（チャンネルは自動有効）                    |
 
 > `--fast` と `--hq` は同時に指定できません。
