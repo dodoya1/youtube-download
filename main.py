@@ -589,6 +589,9 @@ def build_ydl_opts(
         "logger":              yt_logger,
         "noplaylist":          no_playlist,
         "ignoreerrors":        True,
+        "socket_timeout":      30,
+        "retries":             10,
+        "fragment_retries":    10,
     }
     if archive_path is not None:
         common = {**common, "download_archive": archive_path, "break_on_existing": True}
@@ -627,25 +630,27 @@ def build_ydl_opts(
     elif mode == "normal":
         # h264_videotoolbox: Apple M1/M2/M3 のハードウェアエンコーダー
         # libx264 の 10〜20 倍高速で、品質も実用上十分。
-        # -q:v 55  : VideoToolbox の品質スケール（低いほど高品質、0〜100）
-        # -c:a aac : AAC エンコード（QuickTime 対応）
+        # -q:v 25    : VideoToolbox の品質スケール（低いほど高品質、0〜100）
+        # -allow_sw  : ハードウェア制限時にソフトウェアへフォールバック
+        # -c:a aac   : AAC エンコード（QuickTime 対応）
         opts["postprocessor_args"] = {
             "ffmpeg": [
                 "-c:v", "h264_videotoolbox",
-                "-q:v", "55",
-                "-c:a", "aac", "-b:a", "192k",
+                "-q:v", "25",
+                "-allow_sw", "1",
+                "-c:a", "aac", "-b:a", "256k",
                 "-movflags", "+faststart",
             ]
         }
 
     else:  # hq
         # libx264: ソフトウェアエンコード。最高品質だが M1 でも数十分かかる
-        # -crf 18     : 視覚的無劣化に近い高品質（0=無劣化 〜 51=最低）
-        # -preset slow: 時間をかけて高圧縮・高品質
+        # -crf 18       : 視覚的無劣化に近い高品質（0=無劣化 〜 51=最低）
+        # -preset medium: slow と比較して 30-40% 高速、品質差はほぼ知覚不能
         opts["postprocessor_args"] = {
             "ffmpeg": [
-                "-c:v", "libx264", "-crf", FFMPEG_CRF, "-preset", "slow",
-                "-c:a", "aac", "-b:a", "192k",
+                "-c:v", "libx264", "-crf", FFMPEG_CRF, "-preset", "medium",
+                "-c:a", "aac", "-b:a", "256k",
                 "-movflags", "+faststart",
             ]
         }
