@@ -26,6 +26,7 @@ import re
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import yt_dlp
@@ -41,6 +42,9 @@ FORMAT_OPTIONS = ["mp4", "mkv", "webm"]
 
 # libx264 再エンコード時の品質（CRF: 低いほど高品質、18 は視覚的無劣化に近い）
 FFMPEG_CRF = "18"
+
+# 音声ビットレート（AAC 再エンコード時）
+AUDIO_BITRATE = "256k"
 
 COLORS = {
     "green":  "\033[92m",
@@ -84,6 +88,27 @@ class DownloadTracker:
             "id":    info_dict.get("id", ""),
         }
 
+    def has_current(self) -> bool:
+        """現在処理中の動画情報が設定されているかどうかを返す。
+
+        Returns:
+            set_current() により現在動画が設定済みなら True。
+        """
+        return bool(self._current)
+
+    @staticmethod
+    def _is_recorded(vid_id: str, entries: list[dict]) -> bool:
+        """動画 ID が指定リストに記録済みかどうかを判定する。
+
+        Args:
+            vid_id: 判定対象の動画 ID。
+            entries: 検索対象の記録リスト。
+
+        Returns:
+            同じ ID のエントリが存在すれば True。
+        """
+        return any(v.get("id") == vid_id for v in entries)
+
     def record_success(self) -> None:
         """現在処理中の動画を成功リストに追加する。
 
@@ -93,8 +118,7 @@ class DownloadTracker:
         if not self._current:
             return
         vid_id = self._current.get("id", "")
-        already = any(v.get("id") == vid_id for v in self.succeeded)
-        if not already:
+        if not self._is_recorded(vid_id, self.succeeded):
             self.succeeded.append(dict(self._current))
 
     def record_failure(self, reason: str) -> None:
@@ -112,8 +136,7 @@ class DownloadTracker:
         # 誤って成功リストに入っていれば除去
         self.succeeded = [v for v in self.succeeded if v.get("id") != vid_id]
         # 失敗リストへ追加（重複チェック）
-        already = any(v.get("id") == vid_id for v in self.failed)
-        if not already:
+        if not self._is_recorded(vid_id, self.failed):
             entry = {**self._current, "reason": reason}
             self.failed.append(entry)
 
@@ -166,11 +189,11 @@ class YtDlpLogger:
         tracker: ダウンロード結果を追跡する DownloadTracker インスタンス。
     """
 
-    def __init__(self, tracker: "DownloadTracker") -> None:
+    def __init__(self, tracker: "DownloadTracker | None") -> None:
         """YtDlpLogger を初期化する。
 
         Args:
-            tracker: 失敗記録を委譲する DownloadTracker インスタンス。
+            tracker: 失敗記録を委譲する DownloadTracker インスタンス (省略可)。
         """
         self.tracker = tracker
 
@@ -228,7 +251,8 @@ class YtDlpLogger:
             msg: yt-dlp からのエラーメッセージ。
         """
         print(c(f"[ERROR] {msg}", "red"), file=sys.stderr)
-        self.tracker.record_failure(msg)
+        if self.tracker is not None:
+            self.tracker.record_failure(msg)
 
 
 # ── URL 種別判定 ─────────────────────────────────────────────────────────────
@@ -360,18 +384,38 @@ class EncodingSpinner:
             label: スピナーに表示するラベル文字列。
             tracker: 成功記録を委譲する DownloadTracker インスタンス (省略可)。
         """
-        self.label = label
+        self._label = label
         self.tracker = tracker
         self._stop_evt = threading.Event()
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread: threading.Thread | None = None
         self._start_ts = 0.0
+        self._lock = threading.Lock()
+
+    @property
+    def label(self) -> str:
+        """スピナーに表示するラベル文字列。"""
+        with self._lock:
+            return self._label
+
+    def set_label(self, label: str) -> None:
+        """スピナーのラベルをスレッド安全に更新する。
+
+        Args:
+            label: 新しいラベル文字列。
+        """
+        with self._lock:
+            self._label = label
 
     def start(self) -> None:
         """スピナーを開始する。
 
         バックグラウンドスレッドを起動して経過時間の表示を開始する。
+        既に動作中の場合は何もしない (二重起動防止)。
         """
-        self._start_ts = time.time()
+        if self._thread is not None and self._thread.is_alive():
+            return
+        with self._lock:
+            self._start_ts = time.time()
         self._stop_evt.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -379,11 +423,24 @@ class EncodingSpinner:
     def stop(self) -> None:
         """スピナーを停止する。スレッドを終了させ、完了メッセージを表示する。"""
         self._stop_evt.set()
-        self._thread.join()
-        elapsed = time.time() - self._start_ts
+        if self._thread is not None:
+            self._thread.join()
+            self._thread = None
+        with self._lock:
+            elapsed = time.time() - self._start_ts
         # 進捗行をクリアして完了メッセージを表示
         print(f"\r{' ' * 60}\r", end="")
         print(c(f"  ✅  エンコード完了  (所要時間: {fmt_seconds(elapsed)})", "green"))
+
+    def force_stop(self) -> None:
+        """スピナーを強制停止する。完了メッセージは表示しない。
+
+        KeyboardInterrupt など、例外経路でスレッドを確実に終わらせる用途。
+        """
+        self._stop_evt.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+            self._thread = None
 
     def _run(self) -> None:
         """バックグラウンドスレッドのメインループ。
@@ -392,10 +449,12 @@ class EncodingSpinner:
         """
         idx = 0
         while not self._stop_evt.is_set():
-            elapsed = time.time() - self._start_ts
+            with self._lock:
+                elapsed = time.time() - self._start_ts
+                label = self._label
             frame = SPINNER_FRAMES[idx % len(SPINNER_FRAMES)]
             line = (
-                f"\r  {c(frame, 'yellow')}  {c(self.label, 'yellow')}"
+                f"\r  {c(frame, 'yellow')}  {c(label, 'yellow')}"
                 f"  経過: {c(fmt_seconds(elapsed), 'bold')}"
                 f"  {c('(Ctrl+C で中断)', 'reset')}   "
             )
@@ -405,7 +464,7 @@ class EncodingSpinner:
 
 
 # ── 後処理フック ──────────────────────────────────────────────────────────────
-def make_postprocessor_hook(spinner: EncodingSpinner):
+def make_postprocessor_hook(spinner: EncodingSpinner) -> Callable[[dict], None]:
     """yt-dlp の後処理フック関数を生成して返す。
 
     FFmpegMergerPP または FFmpegVideoConvertorPP の開始・終了イベントで
@@ -436,8 +495,7 @@ def make_postprocessor_hook(spinner: EncodingSpinner):
             if status == "started":
                 filename = Path(
                     d.get("info_dict", {}).get("filepath", "")).name
-                label = f"マージ / エンコード中: {filename}"
-                spinner.label = label
+                spinner.set_label(f"マージ / エンコード中: {filename}")
                 print()  # 改行してからスピナーを開始
                 spinner.start()
             elif status == "finished":
@@ -530,10 +588,9 @@ def build_ydl_opts(
     Returns:
         yt-dlp.YoutubeDL に渡すオプション辞書。
     """
-    yt_logger = YtDlpLogger(spinner.tracker)  # type: ignore[arg-type]
+    yt_logger = YtDlpLogger(spinner.tracker)
     common = {
         "outtmpl":             outtmpl,
-        # type: ignore[arg-type]
         "progress_hooks":      [make_progress_hook(spinner.tracker)],
         "postprocessor_hooks": [make_postprocessor_hook(spinner)],
         "logger":              yt_logger,
@@ -588,7 +645,7 @@ def build_ydl_opts(
                 "-c:v", "h264_videotoolbox",
                 "-q:v", "25",
                 "-allow_sw", "1",
-                "-c:a", "aac", "-b:a", "256k",
+                "-c:a", "aac", "-b:a", AUDIO_BITRATE,
                 "-movflags", "+faststart",
             ]
         }
@@ -600,7 +657,7 @@ def build_ydl_opts(
         opts["postprocessor_args"] = {
             "ffmpeg": [
                 "-c:v", "libx264", "-crf", FFMPEG_CRF, "-preset", "medium",
-                "-c:a", "aac", "-b:a", "256k",
+                "-c:a", "aac", "-b:a", AUDIO_BITRATE,
                 "-movflags", "+faststart",
             ]
         }
@@ -609,7 +666,7 @@ def build_ydl_opts(
 
 
 # ── ダウンロード進捗フック ────────────────────────────────────────────────────
-def make_progress_hook(tracker: "DownloadTracker | None"):
+def make_progress_hook(tracker: "DownloadTracker | None") -> Callable[[dict], None]:
     """yt-dlp のダウンロード進捗を表示するフック関数を生成して返す。
 
     進捗を表示しつつ、成功した動画を DownloadTracker に記録する。
@@ -620,7 +677,7 @@ def make_progress_hook(tracker: "DownloadTracker | None"):
     Returns:
         yt-dlp の ``progress_hooks`` に渡すコールバック関数。
     """
-    last_filename: list[str | None] = [None]
+    last_filename: str | None = None
 
     def hook(d: dict) -> None:
         """yt-dlp から呼ばれる進捗コールバック。
@@ -628,6 +685,7 @@ def make_progress_hook(tracker: "DownloadTracker | None"):
         Args:
             d: yt-dlp が渡す進捗情報辞書。
         """
+        nonlocal last_filename
         status = d.get("status")
         filename = d.get("filename", "")
         info_dict = d.get("info_dict", {})
@@ -638,8 +696,8 @@ def make_progress_hook(tracker: "DownloadTracker | None"):
 
         if status == "downloading":
             # ファイルが切り替わったときだけファイル名行を1回だけ表示
-            if filename != last_filename[0]:
-                last_filename[0] = filename
+            if filename != last_filename:
+                last_filename = filename
                 short = Path(filename).name
                 # 前の進捗バー行を消してからファイル名を出力
                 print(f"\r{' ' * 80}\r", end="")
@@ -673,7 +731,7 @@ def make_progress_hook(tracker: "DownloadTracker | None"):
             # プレイリストでは映像・音声の2ファイルで計2回呼ばれるが、
             # record_success は重複チェック済みなので問題ない。
             # postprocessor_hook の "finished" も呼ばれる場合は重複になるが無害。
-            if tracker is not None and tracker._current:
+            if tracker is not None and tracker.has_current():
                 tracker.record_success()
 
         elif status == "error":
@@ -794,7 +852,7 @@ def download(
     )
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             _ = ydl.download([url])
         # 結果サマリーを表示（プレイリストの場合は特に有用）
         tracker.print_summary()
@@ -809,7 +867,7 @@ def download(
         sys.exit(1)
     except KeyboardInterrupt:
         print()
-        spinner._stop_evt.set()  # スピナーが動いていれば停止
+        spinner.force_stop()  # スピナーが動いていれば停止
         warn("ユーザーによって中断されました。")
         tracker.print_summary()
         sys.exit(130)

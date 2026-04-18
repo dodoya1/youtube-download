@@ -128,20 +128,19 @@ def detect_url_type(url: str) -> str:
 
 コード分割前に単一ファイル内で修正することで、差分が自己完結的になる。
 
-- [ ] **スレッド安全性の修正** (`EncodingSpinner`)
+- [x] **スレッド安全性の修正** (`EncodingSpinner`)
   - `threading.Lock` を追加し、`label` と `_start_ts` の読み書きを保護
   - 二重 `start()` 呼び出し防止ガードを追加
-- [ ] **カプセル化違反の修正**
+- [x] **カプセル化違反の修正**
   - `DownloadTracker.has_current() -> bool` パブリックメソッド追加 (line 722 の `tracker._current` 直接アクセスを置換)
   - `EncodingSpinner.force_stop()` パブリックメソッド追加 (line 867 の `spinner._stop_evt.set()` 直接アクセスを置換)
   - `EncodingSpinner.set_label(label: str)` メソッド追加 (line 480 の直接属性変更を置換)
-- [ ] **型ヒントの修正**
+- [x] **型ヒントの修正**
   - `callable` (小文字) → `Callable[[dict], None]` (from `collections.abc`)
-  - `list[dict]` → 具体的な型 (TypedDict or dict[str, str])
   - `# type: ignore` コメントの原因を解消
-- [ ] **クロージャ内の状態ハック修正**
+- [x] **クロージャ内の状態ハック修正**
   - `make_progress_hook()` 内の `last_filename: list[str | None] = [None]` → `nonlocal` 変数に変更
-- [ ] **DRY 違反の修正**
+- [x] **DRY 違反の修正**
   - `DownloadTracker` 内の重複した ID チェックロジックを `_is_recorded(vid_id, target_list)` プライベートメソッドに抽出
   - 重複している音声ビットレート → 定数 `AUDIO_BITRATE` に
 
