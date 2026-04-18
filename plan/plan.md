@@ -154,7 +154,7 @@ def detect_url_type(url: str) -> str:
 
 最大の構造変更。`main.py` (1,035行) を 10 モジュールに分割。
 
-- [ ] ディレクトリ構造の作成
+- [x] ディレクトリ構造の作成
 
 ```
 youtube-download/
@@ -176,7 +176,7 @@ youtube-download/
 └── ...
 ```
 
-- [ ] **各モジュールの依存関係** (循環依存なし)
+- [x] **各モジュールの依存関係** (循環依存なし)
 
 ```
 config, ui, url (リーフ: 外部依存なし)
@@ -190,7 +190,7 @@ downloader (ほぼ全モジュールに依存)
 cli (downloader, config, ui に依存)
 ```
 
-- [ ] **config.py の設計**
+- [x] **config.py の設計**
   - エンコーダープリセットを辞書で定義:
     ```python
     ENCODER_PRESETS = {
@@ -201,17 +201,17 @@ cli (downloader, config, ui に依存)
     ```
   - `OUTPUT_DIR` のパス解決: `Path(__file__).resolve().parent.parent.parent / "downloads"` (src/yt_downloader/config.py → src/yt_downloader → src → project root)
 
-- [ ] **download() 関数の分割** (元 139行 → 各 40行以下)
+- [x] **download() 関数の分割** (元 139行 → 各 40行以下)
   - `_resolve_output_paths(url_type, url, use_archive) -> tuple[Path, str | None]`
   - `_build_date_range(date_after, date_before) -> DateRange | None`
   - `_print_download_config(...)` (設定情報の表示)
   - `download()` はこれらを呼ぶオーケストレーターに
 
-- [ ] **build_ydl_opts() の簡略化**
+- [x] **build_ydl_opts() の簡略化**
   - エンコーダー設定を `config.ENCODER_PRESETS` からルックアップ
   - 3分岐の if/elif/else → 辞書参照に
 
-- [ ] **main.py を薄いエントリポイントに**
+- [x] **main.py を薄いエントリポイントに**
 
   ```python
   #!/usr/bin/env python3
@@ -227,7 +227,7 @@ cli (downloader, config, ui に依存)
       main()
   ```
 
-- [ ] `pyproject.toml` を更新 (`[tool.setuptools.packages.find]` に `where = ["src"]`)
+- [x] `pyproject.toml` を更新 (`[tool.hatch.build.targets.wheel]` で `packages = ["src/yt_downloader"]`)
 
 **変更ファイル**: `main.py` (大幅縮小), `src/yt_downloader/*.py` (全て新規), `pyproject.toml` (修正)
 
