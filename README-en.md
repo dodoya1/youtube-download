@@ -14,6 +14,7 @@ It supports the M1 Mac hardware encoder (`h264_videotoolbox`) to achieve both hi
 - ⚡ **3 encoding modes** — pick the right trade-off between speed and quality
 - 📋 **Playlist support** — pass a YouTube playlist URL to download everything at once
 - 📺 **Channel support** — download every video on a channel URL, with resume on interruption
+- 🔗 **Multiple URLs** — mix videos, playlists, and channels in a single command
 - 🎵 **Audio-only extraction** — save just the audio as MP3 320kbps
 - 📊 **Real-time progress display** — download and encode progress printed to the terminal
 - 🔧 **Flexible resolution & format** — 4K to 144p, MP4 / MKV / WebM
@@ -131,6 +132,25 @@ python main.py "https://youtu.be/xxxxx" --audio-only
 
 ```bash
 python main.py "https://youtu.be/xxxxx" -f mkv
+```
+
+### Download multiple URLs at once
+
+```bash
+python main.py "https://youtu.be/aaa" "https://youtu.be/bbb" "https://youtu.be/ccc"
+```
+
+- Pass multiple URLs separated by spaces. **The same options apply to every URL** (`-q`, `--fast`, `--hq`, `--audio-only`, `--date-after`, `--limit`, etc.).
+- You can **mix video / playlist / channel URLs**. Each URL's type is detected independently (channels go under `downloads/<channel_name>/`, everything else goes directly under `downloads/`).
+- If one URL fails, **the remaining URLs continue processing**. After all URLs are done, the process exits with code `1` if any failures occurred, along with a list of the failed URLs.
+- `Ctrl+C` aborts the whole run immediately (exit code `130`).
+
+```bash
+# Batch-download multiple videos in fast mode
+python main.py "https://youtu.be/aaa" "https://youtu.be/bbb" --fast
+
+# Mix a playlist and a channel in one command
+python main.py "https://www.youtube.com/playlist?list=xxx" "https://www.youtube.com/@user"
 ```
 
 ---

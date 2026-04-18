@@ -1,10 +1,11 @@
 """コマンドライン引数の解析とエントリーポイント。"""
 
 import argparse
+import sys
 
 from yt_downloader.config import FORMAT_OPTIONS, QUALITY_OPTIONS
 from yt_downloader.downloader import download
-from yt_downloader.ui import c
+from yt_downloader.ui import c, error, warn
 
 
 def parse_args() -> argparse.Namespace:
@@ -59,6 +60,9 @@ def parse_args() -> argparse.Namespace:
   # 音声のみ MP3
   python main.py "https://youtu.be/xxxxx" --audio-only
 
+  # 複数 URL を一度にダウンロード（全 URL に同じオプションが適用される）
+  python main.py "https://youtu.be/aaa" "https://youtu.be/bbb" --fast
+
 ⚠️  URL は必ずクォートで囲んでください（zsh の ? 展開を防ぐため）
 ⚠️  brew install node を実行しておくと全フォーマットが取得できます
 
@@ -69,7 +73,8 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "url",
-        help='ダウンロードする YouTube URL（必ずクォートで囲む: "https://..."）',
+        nargs="+",
+        help='ダウンロードする YouTube URL（複数指定可、必ずクォートで囲む: "https://..."）',
     )
     parser.add_argument(
         "-q", "--quality",
@@ -133,7 +138,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """エントリーポイント。ヘッダーを表示してダウンロードを開始する。"""
+    """エントリーポイント。ヘッダーを表示してダウンロードを開始する。
+
+    複数 URL が指定された場合は 1 件ずつ順番に処理し、途中で失敗した URL が
+    あっても残りの URL は続行する。全件処理後、1 件でも失敗があれば終了
+    コード 1 を返す。
+    """
     print(c("\n══════════════════════════════════════════", "cyan"))
     print(c("  🎬  YouTube Downloader (yt-dlp)         ", "cyan", "bold"))
     print(c("  🍎  QuickTime Player 対応版              ", "cyan"))
@@ -148,15 +158,37 @@ def main() -> None:
     else:
         mode = "normal"
 
-    download(
-        url=args.url,
-        quality=args.quality,
-        fmt=args.format,
-        audio_only=args.audio_only,
-        no_playlist=args.no_playlist,
-        mode=mode,
-        date_after=args.date_after,
-        date_before=args.date_before,
-        limit=args.limit,
-        use_archive=args.archive,
-    )
+    urls: list[str] = args.url
+    total = len(urls)
+    failed_urls: list[str] = []
+
+    for index, url in enumerate(urls, start=1):
+        if total > 1:
+            print(c(f"\n━━━ [{index}/{total}] {url} ━━━", "cyan", "bold"))
+        try:
+            download(
+                url=url,
+                quality=args.quality,
+                fmt=args.format,
+                audio_only=args.audio_only,
+                no_playlist=args.no_playlist,
+                mode=mode,
+                date_after=args.date_after,
+                date_before=args.date_before,
+                limit=args.limit,
+                use_archive=args.archive,
+            )
+        except SystemExit as exc:
+            # 130: KeyboardInterrupt は全体中断として即時再送出
+            if exc.code == 130:
+                raise
+            failed_urls.append(url)
+            if total > 1:
+                warn("このURLは失敗しました。次のURLに進みます。")
+
+    if failed_urls:
+        if total > 1:
+            error(f"\n失敗した URL ({len(failed_urls)}/{total}):")
+            for u in failed_urls:
+                error(f"  - {u}")
+        sys.exit(1)

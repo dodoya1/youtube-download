@@ -14,6 +14,7 @@ M1 Mac のハードウェアエンコーダー（`h264_videotoolbox`）に対応
 - ⚡ **3 段階のエンコードモード** — 用途に合わせて速さと画質を選択可能
 - 📋 **プレイリスト対応** — YouTube のプレイリスト URL をそのまま指定して一括ダウンロード
 - 📺 **チャンネル対応** — チャンネル URL で全動画を一括ダウンロード、中断・再開対応
+- 🔗 **複数 URL 対応** — 動画 / プレイリスト / チャンネルを混ぜて一度に指定可能
 - 🎵 **音声のみ抽出** — MP3 320kbps で音声のみ保存
 - 📊 **リアルタイム進捗表示** — ダウンロード・エンコードの進捗をターミナルに表示
 - 🔧 **解像度・形式の柔軟な指定** — 4K〜144p、MP4 / MKV / WebM
@@ -131,6 +132,25 @@ python main.py "https://youtu.be/xxxxx" --audio-only
 
 ```bash
 python main.py "https://youtu.be/xxxxx" -f mkv
+```
+
+### 複数の URL を一度にダウンロード
+
+```bash
+python main.py "https://youtu.be/aaa" "https://youtu.be/bbb" "https://youtu.be/ccc"
+```
+
+- 空白区切りで複数 URL を指定できます。**全 URL に同じオプションが適用されます**（`-q`, `--fast`, `--hq`, `--audio-only`, `--date-after`, `--limit` など）。
+- 動画 / プレイリスト / チャンネル URL の**混在も可能**で、URL ごとに種別が自動判定されます（チャンネルは `downloads/<チャンネル名>/` に、それ以外は `downloads/` 直下に出力）。
+- 途中の URL でダウンロードエラーが発生しても**残りの URL は続行**されます。全件処理後に失敗があれば終了コード `1` を返し、失敗した URL 一覧を表示します。
+- `Ctrl+C` は全体を即時停止します（終了コード `130`）。
+
+```bash
+# 複数動画を高速モードで一括ダウンロード
+python main.py "https://youtu.be/aaa" "https://youtu.be/bbb" --fast
+
+# プレイリストとチャンネルを同時指定
+python main.py "https://www.youtube.com/playlist?list=xxx" "https://www.youtube.com/@user"
 ```
 
 ---
