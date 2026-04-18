@@ -239,20 +239,20 @@ cli (downloader, config, ui に依存)
 
 外部依存なし (yt-dlp モック不要) のリーフモジュールから。
 
-- [ ] `tests/conftest.py` - 共通 fixture
+- [x] `tests/conftest.py` - 共通 fixture
   - `mock_info_dict`: 現実的な yt-dlp info_dict
   - `non_tty_stdout`: `sys.stdout.isatty()` を False にパッチ
-- [ ] `tests/test_url.py`
+- [x] `tests/test_url.py`
   - `detect_url_type()`: チャンネル URL (4パターン), プレイリスト URL, 動画 URL
   - `extract_channel_name()`: 全パターンの抽出、マッチしない場合の "unknown_channel"
-- [ ] `tests/test_ui.py`
+- [x] `tests/test_ui.py`
   - `c()`: TTY 時のカラーコード付与、非 TTY 時のスルー
   - `fmt_seconds()`: 0秒, 59秒, 60秒, 3661秒 等の境界値
   - `info()`, `ok()`, `warn()`, `error()`: 出力フォーマットの検証
-- [ ] `tests/test_config.py`
+- [x] `tests/test_config.py`
   - 定数の型・値チェック (`QUALITY_OPTIONS`, `FORMAT_OPTIONS`, `ENCODER_PRESETS`)
   - `OUTPUT_DIR` / `ARCHIVE_DIR` パスの整合性
-- [ ] `tests/test_tracker.py`
+- [x] `tests/test_tracker.py`
   - `set_current()` → `record_success()` の基本フロー
   - 重複チェック: 同じ ID で2回 `record_success()` → 1件
   - `record_failure()` が成功リストから除去する動作
