@@ -200,7 +200,9 @@ def _build_date_range(
 
     if date_after is None and date_before is None:
         return None
-    return DateRange(start=date_after, end=date_before)
+    # yt-dlp の DateRange はランタイムでは YYYYMMDD 文字列を受け取る仕様だが、
+    # 型推論上は date | None と解釈されるため、ここで型チェックを抑止する。
+    return DateRange(start=date_after, end=date_before)  # type: ignore[arg-type]
 
 
 def _print_download_config(
@@ -334,7 +336,9 @@ def download(
     )
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        # ydl_opts はモード・URL 種別で動的に組み立てるため、yt-dlp の
+        # _Params TypedDict に narrow できない。型チェックのみ抑止する。
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
             _ = ydl.download([url])
         # 結果サマリーを表示（プレイリストの場合は特に有用）
         tracker.print_summary()
