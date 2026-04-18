@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
-"""
-yt_downloader.py - yt-dlp を使った YouTube 動画ダウンローダー。
+"""main.py - yt-dlp を使った YouTube 動画ダウンローダー。
 
-**事前準備（初回のみ）**::
+事前準備 (初回のみ):
 
     brew install node      # JS ランタイム（全フォーマット取得に必須）
     brew install ffmpeg    # 動画マージ・変換に必須
 
-使い方::
+使い方:
 
-    python yt_downloader.py "<URL>" [オプション]
+    python main.py "<URL>" [オプション]
 
-モード::
+モード:
 
     デフォルト  最高画質ダウンロード + M1 ハードウェアエンコード（推奨）
     --fast      H.264 ストリームコピー（最大 1080p・数秒）
     --hq        最高画質 + libx264 ソフトウェアエンコード（最高品質・低速）
 
-.. note::
+Note:
     URL に ``?`` が含まれる場合は必ずクォートで囲んでください。
     zsh がワイルドカードとして解釈するためです。
 """
@@ -57,14 +56,14 @@ SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇",
 
 # ── ダウンロード結果トラッカー ─────────────────────────────────────────────────
 class DownloadTracker:
-    """
-    プレイリスト全体のダウンロード結果（成功・失敗）を動画単位で追跡するクラス。
+    """プレイリスト全体のダウンロード結果を動画単位で追跡するクラス。
 
     yt-dlp の progress_hooks と postprocessor_hooks、およびカスタムロガーと
     連携して各動画の成否を記録し、完了後にサマリーを表示する。
 
-    :ivar succeeded: ダウンロード成功した動画の情報リスト（title, url）
-    :ivar failed: ダウンロード失敗した動画の情報リスト（title, url, reason）
+    Attributes:
+        succeeded: ダウンロード成功した動画の情報リスト (title, url)。
+        failed: ダウンロード失敗した動画の情報リスト (title, url, reason)。
     """
 
     def __init__(self) -> None:
@@ -74,12 +73,10 @@ class DownloadTracker:
         self._current:  dict = {}   # 現在処理中の動画情報
 
     def set_current(self, info_dict: dict) -> None:
-        """
-        現在処理中の動画情報を更新する。progress_hook から呼ばれる。
+        """現在処理中の動画情報を更新する。progress_hook から呼ばれる。
 
-        :param info_dict: yt-dlp の info_dict（title / webpage_url / id を含む）
-        :type info_dict: dict
-        :return: None
+        Args:
+            info_dict: yt-dlp の info_dict (title / webpage_url / id を含む)。
         """
         self._current = {
             "title": info_dict.get("title") or info_dict.get("id", "Unknown"),
@@ -88,13 +85,10 @@ class DownloadTracker:
         }
 
     def record_success(self) -> None:
-        """
-        現在処理中の動画を成功リストに追加する。
+        """現在処理中の動画を成功リストに追加する。
 
         映像・音声の2ファイルで複数回呼ばれることがあるため、
         動画IDベースで重複チェックを行う。
-
-        :return: None
         """
         if not self._current:
             return
@@ -104,15 +98,13 @@ class DownloadTracker:
             self.succeeded.append(dict(self._current))
 
     def record_failure(self, reason: str) -> None:
-        """
-        現在処理中の動画を失敗リストに追加する。カスタムロガーから呼ばれる。
+        """現在処理中の動画を失敗リストに追加する。カスタムロガーから呼ばれる。
 
         同じ動画IDで複数回エラーが来ることがあるため、IDベースで重複チェックする。
         また、失敗した動画が誤って成功リストに入っている場合は除去する。
 
-        :param reason: yt-dlp が報告したエラーメッセージ
-        :type reason: str
-        :return: None
+        Args:
+            reason: yt-dlp が報告したエラーメッセージ。
         """
         if not self._current:
             return
@@ -126,12 +118,9 @@ class DownloadTracker:
             self.failed.append(entry)
 
     def print_summary(self) -> None:
-        """
-        ダウンロード完了後の結果サマリーをターミナルに出力する。
+        """ダウンロード完了後の結果サマリーをターミナルに出力する。
 
-        成功件数・失敗件数・失敗動画の詳細（タイトル・URL・エラー理由）を表示する。
-
-        :return: None
+        成功件数・失敗件数・失敗動画の詳細 (タイトル・URL・エラー理由) を表示する。
         """
         total = len(self.succeeded) + len(self.failed)
         print()
@@ -168,40 +157,35 @@ class DownloadTracker:
 
 
 class YtDlpLogger:
-    """
-    yt-dlp のログ出力を横取りするカスタムロガークラス。
+    """yt-dlp のログ出力を横取りするカスタムロガークラス。
 
     エラーメッセージを ``DownloadTracker`` に転送して失敗動画を記録する。
     警告は標準エラー出力に表示し、デバッグは抑制する。
 
-    :param tracker: ダウンロード結果を追跡する DownloadTracker インスタンス
-    :type tracker: DownloadTracker
+    Attributes:
+        tracker: ダウンロード結果を追跡する DownloadTracker インスタンス。
     """
 
     def __init__(self, tracker: "DownloadTracker") -> None:
-        """
-        YtDlpLogger を初期化する。
+        """YtDlpLogger を初期化する。
 
-        :param tracker: 失敗記録を委譲する DownloadTracker インスタンス
-        :type tracker: DownloadTracker
+        Args:
+            tracker: 失敗記録を委譲する DownloadTracker インスタンス。
         """
         self.tracker = tracker
 
     def debug(self, msg: str) -> None:
-        """
-        デバッグメッセージを処理する。
+        """デバッグメッセージを処理する。
 
         yt-dlp は通常の情報ログも debug() 経由で送るため、種別ごとに処理を分ける。
 
-        - ``[download]`` の進捗行（``% of`` を含む行）は **抑制** する。
-          progress_hook が ``
-`` 上書きで1行表示するため二重出力になるのを防ぐ。
+        - ``[download]`` の進捗行 (``% of`` を含む行) は抑制する。
+          progress_hook が ``\\r`` 上書きで1行表示するため二重出力になるのを防ぐ。
         - ``[Merger]`` / ``[info]`` / ``[VideoRemuxer]`` 等の構造的なログは
           進捗バー行を消してから表示する。
 
-        :param msg: yt-dlp からのデバッグメッセージ
-        :type msg: str
-        :return: None
+        Args:
+            msg: yt-dlp からのデバッグメッセージ。
         """
         CLEAR = "\r" + " " * 80 + "\r"
 
@@ -230,22 +214,18 @@ class YtDlpLogger:
         print(msg)
 
     def warning(self, msg: str) -> None:
-        """
-        WARNING メッセージを標準エラー出力に表示する。
+        """WARNING メッセージを標準エラー出力に表示する。
 
-        :param msg: yt-dlp からの警告メッセージ
-        :type msg: str
-        :return: None
+        Args:
+            msg: yt-dlp からの警告メッセージ。
         """
         print(c(f"[WARN]  {msg}", "yellow"), file=sys.stderr)
 
     def error(self, msg: str) -> None:
-        """
-        エラーメッセージを標準エラー出力に表示し、失敗として記録する。
+        """エラーメッセージを標準エラー出力に表示し、失敗として記録する。
 
-        :param msg: yt-dlp からのエラーメッセージ
-        :type msg: str
-        :return: None
+        Args:
+            msg: yt-dlp からのエラーメッセージ。
         """
         print(c(f"[ERROR] {msg}", "red"), file=sys.stderr)
         self.tracker.record_failure(msg)
@@ -261,13 +241,13 @@ _CHANNEL_PATTERNS = (
 
 
 def detect_url_type(url: str) -> str:
-    """
-    YouTube URL の種別を判定する。
+    """YouTube URL の種別を判定する。
 
-    :param url: YouTube URL
-    :type url: str
-    :return: ``"channel"`` / ``"playlist"`` / ``"video"``
-    :rtype: str
+    Args:
+        url: YouTube URL。
+
+    Returns:
+        "channel" / "playlist" / "video" のいずれか。
     """
     if any(re.search(p, url) for p in _CHANNEL_PATTERNS):
         return "channel"
@@ -277,13 +257,14 @@ def detect_url_type(url: str) -> str:
 
 
 def extract_channel_name(url: str) -> str:
-    """
-    チャンネル URL からディレクトリ名に使う識別子を抽出する。
+    """チャンネル URL からディレクトリ名に使う識別子を抽出する。
 
-    :param url: YouTube チャンネル URL
-    :type url: str
-    :return: チャンネル識別子（``@username`` の ``username`` 部分等）
-    :rtype: str
+    Args:
+        url: YouTube チャンネル URL。
+
+    Returns:
+        チャンネル識別子 (``@username`` の ``username`` 部分等)。マッチしない場合は
+        ``"unknown_channel"``。
     """
     for pattern in _CHANNEL_PATTERNS:
         m = re.search(pattern, url)
@@ -294,17 +275,16 @@ def extract_channel_name(url: str) -> str:
 
 # ── ユーティリティ ────────────────────────────────────────────────────────────
 def c(text: str, *keys: str) -> str:
-    """
-    ANSIカラーコードを付与した文字列を返す。
+    """ANSIカラーコードを付与した文字列を返す。
 
-    標準出力が TTY でない場合（パイプやリダイレクト）はカラーコードを付与しない。
+    標準出力が TTY でない場合 (パイプやリダイレクト) はカラーコードを付与しない。
 
-    :param text: 色付けしたい文字列
-    :type text: str
-    :param keys: COLORS に定義されたキー名（複数指定可）
-    :type keys: str
-    :return: カラーコード付きの文字列（非 TTY では text をそのまま返す）
-    :rtype: str
+    Args:
+        text: 色付けしたい文字列。
+        *keys: COLORS に定義されたキー名 (複数指定可)。
+
+    Returns:
+        カラーコード付きの文字列。非 TTY では text をそのまま返す。
     """
     if not sys.stdout.isatty():
         return text
@@ -313,57 +293,49 @@ def c(text: str, *keys: str) -> str:
 
 
 def info(msg: str) -> None:
-    """
-    INFOレベルのメッセージを標準出力に表示する。
+    """INFO レベルのメッセージを標準出力に表示する。
 
-    :param msg: 表示するメッセージ
-    :type msg: str
-    :return: None
+    Args:
+        msg: 表示するメッセージ。
     """
     print(c(f"[INFO]  {msg}", "cyan"))
 
 
 def ok(msg: str) -> None:
-    """
-    成功メッセージを標準出力に表示する。
+    """成功メッセージを標準出力に表示する。
 
-    :param msg: 表示するメッセージ
-    :type msg: str
-    :return: None
+    Args:
+        msg: 表示するメッセージ。
     """
     print(c(f"[OK]    {msg}", "green", "bold"))
 
 
 def warn(msg: str) -> None:
-    """
-    WARNINGレベルのメッセージを標準エラー出力に表示する。
+    """WARNING レベルのメッセージを標準エラー出力に表示する。
 
-    :param msg: 表示するメッセージ
-    :type msg: str
-    :return: None
+    Args:
+        msg: 表示するメッセージ。
     """
     print(c(f"[WARN]  {msg}", "yellow"), file=sys.stderr)
 
 
 def error(msg: str) -> None:
-    """
-    ERRORレベルのメッセージを標準エラー出力に表示する。
+    """ERROR レベルのメッセージを標準エラー出力に表示する。
 
-    :param msg: 表示するメッセージ
-    :type msg: str
-    :return: None
+    Args:
+        msg: 表示するメッセージ。
     """
     print(c(f"[ERROR] {msg}", "red", "bold"), file=sys.stderr)
 
 
 def fmt_seconds(secs: float) -> str:
-    """
-    秒数を ``MM:SS`` 形式の文字列に変換する。
+    """秒数を ``MM:SS`` 形式の文字列に変換する。
 
-    :param secs: 変換する秒数
-    :type secs: float
-    :return: ``MM:SS`` 形式の文字列
-    :rtype: str
+    Args:
+        secs: 変換する秒数。
+
+    Returns:
+        ``MM:SS`` 形式の文字列。
     """
     m, s = divmod(int(secs), 60)
     return f"{m:02d}:{s:02d}"
@@ -371,24 +343,22 @@ def fmt_seconds(secs: float) -> str:
 
 # ── エンコード進捗スピナー ────────────────────────────────────────────────────
 class EncodingSpinner:
-    """
-    エンコード中の経過時間をリアルタイム表示するスピナークラス。
+    """エンコード中の経過時間をリアルタイム表示するスピナークラス。
 
     バックグラウンドスレッドで動作し、エンコード開始から経過した時間と
     スピナーアニメーションをターミナルに表示する。
 
-    :param label: スピナーに表示するラベル文字列
-    :type label: str
+    Attributes:
+        label: スピナーに表示するラベル文字列。
+        tracker: 成功記録を委譲する DownloadTracker インスタンス。
     """
 
     def __init__(self, label: str = "エンコード中", tracker: "DownloadTracker | None" = None) -> None:
-        """
-        EncodingSpinner を初期化する。
+        """EncodingSpinner を初期化する。
 
-        :param label: スピナーに表示するラベル文字列
-        :type label: str
-        :param tracker: 成功記録を委譲する DownloadTracker インスタンス（省略可）
-        :type tracker: DownloadTracker | None
+        Args:
+            label: スピナーに表示するラベル文字列。
+            tracker: 成功記録を委譲する DownloadTracker インスタンス (省略可)。
         """
         self.label = label
         self.tracker = tracker
@@ -397,10 +367,9 @@ class EncodingSpinner:
         self._start_ts = 0.0
 
     def start(self) -> None:
-        """
-        スピナーを開始する。バックグラウンドスレッドを起動して経過時間の表示を開始する。
+        """スピナーを開始する。
 
-        :return: None
+        バックグラウンドスレッドを起動して経過時間の表示を開始する。
         """
         self._start_ts = time.time()
         self._stop_evt.clear()
@@ -408,11 +377,7 @@ class EncodingSpinner:
         self._thread.start()
 
     def stop(self) -> None:
-        """
-        スピナーを停止する。スレッドを終了させ、完了メッセージを表示する。
-
-        :return: None
-        """
+        """スピナーを停止する。スレッドを終了させ、完了メッセージを表示する。"""
         self._stop_evt.set()
         self._thread.join()
         elapsed = time.time() - self._start_ts
@@ -421,12 +386,9 @@ class EncodingSpinner:
         print(c(f"  ✅  エンコード完了  (所要時間: {fmt_seconds(elapsed)})", "green"))
 
     def _run(self) -> None:
-        """
-        バックグラウンドスレッドのメインループ。
+        """バックグラウンドスレッドのメインループ。
 
         0.1 秒ごとにスピナーと経過時間を更新して標準出力に書き込む。
-
-        :return: None
         """
         idx = 0
         while not self._stop_evt.is_set():
@@ -444,16 +406,16 @@ class EncodingSpinner:
 
 # ── 後処理フック ──────────────────────────────────────────────────────────────
 def make_postprocessor_hook(spinner: EncodingSpinner):
-    """
-    yt-dlp の後処理フック関数を生成して返す。
+    """yt-dlp の後処理フック関数を生成して返す。
 
     FFmpegMergerPP または FFmpegVideoConvertorPP の開始・終了イベントで
     スピナーを制御し、完了時に DownloadTracker へ成功を記録する。
 
-    :param spinner: 制御対象の EncodingSpinner インスタンス（tracker を内包）
-    :type spinner: EncodingSpinner
-    :return: yt-dlp の ``postprocessor_hooks`` に渡すコールバック関数
-    :rtype: callable
+    Args:
+        spinner: 制御対象の EncodingSpinner インスタンス (tracker を内包)。
+
+    Returns:
+        yt-dlp の ``postprocessor_hooks`` に渡すコールバック関数。
     """
     encoding_pps = {
         "FFmpegMergerPP",
@@ -462,12 +424,10 @@ def make_postprocessor_hook(spinner: EncodingSpinner):
     }
 
     def hook(d: dict) -> None:
-        """
-        yt-dlp から呼ばれる後処理コールバック。
+        """yt-dlp から呼ばれる後処理コールバック。
 
-        :param d: yt-dlp が渡す後処理情報辞書
-        :type d: dict
-        :return: None
+        Args:
+            d: yt-dlp が渡す後処理情報辞書。
         """
         pp = d.get("postprocessor", "")
         status = d.get("status", "")
@@ -491,21 +451,20 @@ def make_postprocessor_hook(spinner: EncodingSpinner):
 
 # ── フォーマット文字列の構築 ──────────────────────────────────────────────────
 def build_format_selector(quality: str, mode: str = "normal") -> str:
-    """
-    yt-dlp のフォーマットセレクタ文字列を組み立てる。
+    """yt-dlp のフォーマットセレクタ文字列を組み立てる。
 
     モードによって選択するコーデックと解像度の戦略が異なる。
 
-    - ``"fast"``   : H.264 + AAC を優先（ストリームコピー可、最大 1080p）
-    - ``"normal"`` : コーデック制限なし・最高品質（VP9/AV1 含む、ハードウェアエンコード）
-    - ``"hq"``     : ``"normal"`` と同じセレクタ（libx264 ソフトウェアエンコード）
+    - ``"fast"``   : H.264 + AAC を優先 (ストリームコピー可、最大 1080p)
+    - ``"normal"`` : コーデック制限なし・最高品質 (VP9/AV1 含む、ハードウェアエンコード)
+    - ``"hq"``     : ``"normal"`` と同じセレクタ (libx264 ソフトウェアエンコード)
 
-    :param quality: 解像度指定。``"best"`` または ``"1080"`` のような数字文字列。
-    :type quality: str
-    :param mode: ダウンロードモード（``"fast"``, ``"normal"``, ``"hq"``）
-    :type mode: str
-    :return: yt-dlp の ``format`` オプションに渡すセレクタ文字列
-    :rtype: str
+    Args:
+        quality: 解像度指定。``"best"`` または ``"1080"`` のような数字文字列。
+        mode: ダウンロードモード (``"fast"`` / ``"normal"`` / ``"hq"``)。
+
+    Returns:
+        yt-dlp の ``format`` オプションに渡すセレクタ文字列。
     """
     if mode == "fast":
         # H.264 + AAC を優先：ストリームコピーで数秒マージ
@@ -548,37 +507,28 @@ def build_ydl_opts(
     date_range: DateRange | None = None,
     playlist_items: str | None = None,
 ) -> dict:
-    """
-    yt-dlp に渡すオプション辞書を構築する。
+    """yt-dlp に渡すオプション辞書を構築する。
 
     モードに応じて ffmpeg のエンコード戦略を切り替える。
 
-    - ``"fast"``   : ストリームコピー（``-c copy``）。再エンコードなし・数秒
-    - ``"normal"`` : ``h264_videotoolbox``（Apple M1 ハードウェアエンコード）。数分
-    - ``"hq"``     : ``libx264 -preset slow``（ソフトウェア最高品質）。数十分
+    - ``"fast"``   : ストリームコピー (``-c copy``)。再エンコードなし・数秒。
+    - ``"normal"`` : ``h264_videotoolbox`` (Apple M1 ハードウェアエンコード)。数分。
+    - ``"hq"``     : ``libx264 -preset medium`` (ソフトウェア最高品質)。数十分。
 
-    :param quality: 解像度指定（``"best"`` または ``"1080"`` 等）
-    :type quality: str
-    :param fmt: 出力コンテナ形式（``"mp4"``, ``"mkv"``, ``"webm"``）
-    :type fmt: str
-    :param audio_only: True の場合は音声のみ MP3 で抽出する
-    :type audio_only: bool
-    :param no_playlist: True の場合はプレイリスト URL でも先頭1件のみ取得する
-    :type no_playlist: bool
-    :param outtmpl: yt-dlp の出力ファイル名テンプレート
-    :type outtmpl: str
-    :param mode: ダウンロードモード（``"fast"``, ``"normal"``, ``"hq"``）
-    :type mode: str
-    :param spinner: エンコード進捗表示用スピナー
-    :type spinner: EncodingSpinner
-    :param archive_path: ダウンロード済み動画IDを記録するファイルパス（省略可）
-    :type archive_path: str | None
-    :param date_range: アップロード日のフィルタ範囲（省略可）
-    :type date_range: DateRange | None
-    :param playlist_items: ダウンロードする動画のインデックス範囲（例: ``"1:10"``）
-    :type playlist_items: str | None
-    :return: yt-dlp.YoutubeDL に渡すオプション辞書
-    :rtype: dict
+    Args:
+        quality: 解像度指定 (``"best"`` または ``"1080"`` 等)。
+        fmt: 出力コンテナ形式 (``"mp4"`` / ``"mkv"`` / ``"webm"``)。
+        audio_only: True の場合は音声のみ MP3 で抽出する。
+        no_playlist: True の場合はプレイリスト URL でも先頭1件のみ取得する。
+        outtmpl: yt-dlp の出力ファイル名テンプレート。
+        mode: ダウンロードモード (``"fast"`` / ``"normal"`` / ``"hq"``)。
+        spinner: エンコード進捗表示用スピナー。
+        archive_path: ダウンロード済み動画IDを記録するファイルパス (省略可)。
+        date_range: アップロード日のフィルタ範囲 (省略可)。
+        playlist_items: ダウンロードする動画のインデックス範囲 (例: ``"1:10"``)。
+
+    Returns:
+        yt-dlp.YoutubeDL に渡すオプション辞書。
     """
     yt_logger = YtDlpLogger(spinner.tracker)  # type: ignore[arg-type]
     common = {
@@ -660,24 +610,23 @@ def build_ydl_opts(
 
 # ── ダウンロード進捗フック ────────────────────────────────────────────────────
 def make_progress_hook(tracker: "DownloadTracker | None"):
-    """
-    yt-dlp のダウンロード進捗を表示しつつ、成功した動画を DownloadTracker に記録する
-    フック関数を生成して返す。
+    """yt-dlp のダウンロード進捗を表示するフック関数を生成して返す。
 
-    :param tracker: 成功記録を委譲する DownloadTracker インスタンス
-    :type tracker: DownloadTracker | None
-    :return: yt-dlp の ``progress_hooks`` に渡すコールバック関数
-    :rtype: callable
+    進捗を表示しつつ、成功した動画を DownloadTracker に記録する。
+
+    Args:
+        tracker: 成功記録を委譲する DownloadTracker インスタンス。
+
+    Returns:
+        yt-dlp の ``progress_hooks`` に渡すコールバック関数。
     """
     last_filename: list[str | None] = [None]
 
     def hook(d: dict) -> None:
-        """
-        yt-dlp から呼ばれる進捗コールバック。
+        """yt-dlp から呼ばれる進捗コールバック。
 
-        :param d: yt-dlp が渡す進捗情報辞書
-        :type d: dict
-        :return: None
+        Args:
+            d: yt-dlp が渡す進捗情報辞書。
         """
         status = d.get("status")
         filename = d.get("filename", "")
@@ -747,34 +696,25 @@ def download(
     limit: int | None = None,
     use_archive: bool = False,
 ) -> None:
-    """
-    指定した URL の動画（またはプレイリスト、チャンネル）をダウンロードする。
+    """指定した URL の動画（またはプレイリスト、チャンネル）をダウンロードする。
 
     チャンネル URL の場合はサブディレクトリに出力し、ダウンロードアーカイブを
     自動的に有効にして再実行時にダウンロード済み動画をスキップする。
 
-    :param url: ダウンロード対象の YouTube URL
-    :type url: str
-    :param quality: 解像度指定（``"best"`` または ``"1080"`` 等）
-    :type quality: str
-    :param fmt: 出力コンテナ形式（``"mp4"``, ``"mkv"``, ``"webm"``）
-    :type fmt: str
-    :param audio_only: True の場合は音声のみ MP3 で抽出する
-    :type audio_only: bool
-    :param no_playlist: True の場合はプレイリスト URL でも先頭1件のみ取得する
-    :type no_playlist: bool
-    :param mode: ダウンロードモード（``"fast"``, ``"normal"``, ``"hq"``）
-    :type mode: str
-    :param date_after: 指定日以降の動画のみ取得（``YYYYMMDD`` 形式）
-    :type date_after: str | None
-    :param date_before: 指定日以前の動画のみ取得（``YYYYMMDD`` 形式）
-    :type date_before: str | None
-    :param limit: ダウンロードする最大件数
-    :type limit: int | None
-    :param use_archive: プレイリストでもダウンロード済みスキップを有効にする
-    :type use_archive: bool
-    :return: None
-    :raises SystemExit: ダウンロードエラーまたはユーザー中断時
+    Args:
+        url: ダウンロード対象の YouTube URL。
+        quality: 解像度指定（``"best"`` または ``"1080"`` 等）。
+        fmt: 出力コンテナ形式（``"mp4"``, ``"mkv"``, ``"webm"``）。
+        audio_only: True の場合は音声のみ MP3 で抽出する。
+        no_playlist: True の場合はプレイリスト URL でも先頭1件のみ取得する。
+        mode: ダウンロードモード（``"fast"``, ``"normal"``, ``"hq"``）。
+        date_after: 指定日以降の動画のみ取得（``YYYYMMDD`` 形式）。
+        date_before: 指定日以前の動画のみ取得（``YYYYMMDD`` 形式）。
+        limit: ダウンロードする最大件数。
+        use_archive: プレイリストでもダウンロード済みスキップを有効にする。
+
+    Raises:
+        SystemExit: ダウンロードエラーまたはユーザー中断時。
     """
     url_type = detect_url_type(url)
 
@@ -877,18 +817,17 @@ def download(
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 def parse_args() -> argparse.Namespace:
-    """
-    コマンドライン引数を解析して返す。
+    """コマンドライン引数を解析して返す。
 
     モードフラグ (``--fast``, ``--hq``) は排他オプショングループで管理し、
     同時指定はエラーとなる。
 
-    .. note::
+    Note:
         URL に ``?`` が含まれる場合、zsh がワイルドカードとして解釈するため
         必ずクォートで囲む必要がある。
 
-    :return: 解析済みの引数オブジェクト
-    :rtype: argparse.Namespace
+    Returns:
+        解析済みの引数オブジェクト。
     """
     parser = argparse.ArgumentParser(
         prog="yt_downloader",
@@ -1003,11 +942,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """
-    エントリーポイント。ヘッダーを表示してダウンロードを開始する。
-
-    :return: None
-    """
+    """エントリーポイント。ヘッダーを表示してダウンロードを開始する。"""
     print(c("\n══════════════════════════════════════════", "cyan"))
     print(c("  🎬  YouTube Downloader (yt-dlp)         ", "cyan", "bold"))
     print(c("  🍎  QuickTime Player 対応版              ", "cyan"))

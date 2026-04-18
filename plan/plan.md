@@ -83,12 +83,12 @@
 
 機械的な変換。ロジック変更なし。コード分割前に実施することで、1ファイルでの差分レビューが容易。
 
-- [ ] 全クラス・メソッド・関数の docstring を Google style に変換
+- [x] 全クラス・メソッド・関数の docstring を Google style に変換
   - `:param name:` / `:type name:` → `Args:` セクション内に `name (型): 説明`
   - `:return:` / `:rtype:` → `Returns:` セクションに統合
   - `:raises:` → `Raises:` セクション
-- [ ] モジュール docstring のファイル名を `yt_downloader.py` → `main.py` に修正
-- [ ] docstring の説明文は日本語を維持
+- [x] モジュール docstring のファイル名を `yt_downloader.py` → `main.py` に修正
+- [x] docstring の説明文は日本語を維持
 
 **変換例**:
 
