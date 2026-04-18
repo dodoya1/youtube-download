@@ -1,3 +1,5 @@
+**日本語** | [English](README-en.md)
+
 # 🎬 yt-dlp YouTube Downloader
 
 yt-dlp を使った YouTube 動画・音声ダウンローダーです。  
@@ -140,7 +142,7 @@ python main.py "https://youtu.be/xxxxx" -f mkv
 | `--quality`     | `-q`   | `best`     | 解像度を指定（`best` / `2160` / `1440` / `1080` / `720` / `480` / `360` / `240` / `144`） |
 | `--format`      | `-f`   | `mp4`      | 出力形式を指定（`mp4` / `mkv` / `webm`）                                                  |
 | `--fast`        | —      | `false`    | 高速モード（H.264 ストリームコピー）                                                      |
-| `--hq`          | —      | `false`    | 最高品質モード（libx264 preset slow）                                                     |
+| `--hq`          | —      | `false`    | 最高品質モード（libx264 preset medium）                                                   |
 | `--audio-only`  | —      | `false`    | 音声のみ MP3 320kbps で抽出                                                               |
 | `--no-playlist` | —      | `false`    | プレイリスト URL でも先頭 1 件のみ取得                                                    |
 | `--date-after`  | —      | —          | 指定日以降の動画のみ取得（形式: `YYYYMMDD`）                                              |
@@ -158,7 +160,7 @@ python main.py "https://youtu.be/xxxxx" -f mkv
 | ---------------- | -------- | --------------------- | -------------- | ---------- | --------- |
 | 高速             | `--fast` | ストリームコピー      | 数秒           | 1080p 相当 | ✅        |
 | **標準（推奨）** | _(なし)_ | **h264_videotoolbox** | **数分**       | **4K**     | **✅**    |
-| 最高品質         | `--hq`   | libx264 slow          | 数十分         | 4K         | ✅        |
+| 最高品質         | `--hq`   | libx264 medium        | 数十分         | 4K         | ✅        |
 
 > 処理時間は動画の長さ・解像度・マシン性能により異なります。  
 > M1 Mac 8GB の場合、3 時間の 4K 動画で標準モードは 5〜15 分程度が目安です。
@@ -169,15 +171,29 @@ python main.py "https://youtu.be/xxxxx" -f mkv
 
 ```
 yt-downloader/
-├── main.py              # メインスクリプト
-├── README.md            # このファイル
-├── .venv/               # uv が作成する仮想環境（Git 管理外）
-└── downloads/           # ダウンロードした動画の保存先（自動作成）
-    ├── video_title.mp4  #   単一動画・プレイリストの出力先
-    ├── username/        #   チャンネル名のサブディレクトリ
-    │   ├── video1.mp4
-    │   └── video2.mp4
-    └── .archive/        #   ダウンロード済み記録（自動作成）
+├── main.py                  # エントリーポイント（薄いラッパー）
+├── src/
+│   └── yt_downloader/       # パッケージ本体
+│       ├── cli.py           # CLI 引数解析とエントリーポイント
+│       ├── config.py        # 定数・エンコーダープリセット
+│       ├── downloader.py    # ダウンロード本体
+│       ├── encoding.py      # EncodingSpinner
+│       ├── hooks.py         # yt-dlp フック関数
+│       ├── logger.py        # YtDlpLogger
+│       ├── tracker.py       # DownloadTracker
+│       ├── ui.py            # ターミナル表示ユーティリティ
+│       └── url.py           # URL 種別判定
+├── tests/                   # pytest によるユニットテスト
+├── pyproject.toml           # パッケージ設定
+├── README.md                # このファイル
+├── README-en.md             # 英語版 README
+├── .venv/                   # uv が作成する仮想環境（Git 管理外）
+└── downloads/               # ダウンロードした動画の保存先（自動作成）
+    ├── video_title [id].mp4 #   単一動画・プレイリストの出力先
+    ├── username/            #   チャンネル名のサブディレクトリ
+    │   ├── video1 [id].mp4
+    │   └── video2 [id].mp4
+    └── .archive/            #   ダウンロード済み記録（自動作成）
         └── username.txt
 ```
 

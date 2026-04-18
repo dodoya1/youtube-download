@@ -288,14 +288,14 @@ yt-dlp のモックやスレッドを扱うテスト。
 
 ### Commit 8: `docs: 英語版 README 作成と言語切替リンク追加`
 
-- [ ] `README-en.md` を新規作成 (README.md の英語翻訳)
+- [x] `README-en.md` を新規作成 (README.md の英語翻訳)
   - セクション構成は README.md と同一
   - ディレクトリ構成は新しい `src/` レイアウトに更新
-- [ ] `README.md` の先頭に言語切替リンクを追加
+- [x] `README.md` の先頭に言語切替リンクを追加
   - `[English](README-en.md) | 日本語`
-- [ ] `README-en.md` の先頭にも言語切替リンク
+- [x] `README-en.md` の先頭にも言語切替リンク
   - `English | [日本語](README.md)`
-- [ ] 両 README のディレクトリ構成セクションを新構成に更新
+- [x] 両 README のディレクトリ構成セクションを新構成に更新
 
 **変更ファイル**: `README.md` (修正), `README-en.md` (新規)
 
