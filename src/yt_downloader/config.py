@@ -25,11 +25,11 @@ ENCODER_PRESETS: dict[str, list[str]] = {
     # ストリームコピー: コンテナ詰め替えのみ、数秒で完了
     "fast": ["-c", "copy", "-movflags", "+faststart"],
     # h264_videotoolbox: Apple M1/M2/M3 のハードウェアエンコーダー
-    # -q:v 25    : VideoToolbox の品質スケール（低いほど高品質、0〜100）
+    # -q:v 75    : VideoToolbox の品質スケール（高いほど高品質、0〜100）
     # -allow_sw  : ハードウェア制限時にソフトウェアへフォールバック
     "normal": [
         "-c:v", "h264_videotoolbox",
-        "-q:v", "25",
+        "-q:v", "75",
         "-allow_sw", "1",
         "-c:a", "aac", "-b:a", AUDIO_BITRATE,
         "-movflags", "+faststart",
