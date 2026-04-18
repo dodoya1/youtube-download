@@ -265,18 +265,18 @@ cli (downloader, config, ui に依存)
 
 yt-dlp のモックやスレッドを扱うテスト。
 
-- [ ] `tests/test_encoding.py`
+- [x] `tests/test_encoding.py`
   - `EncodingSpinner` の start/stop ライフサイクル
   - `set_label()` のスレッド安全性 (Lock 取得の確認)
   - `force_stop()` でスレッドが確実に終了すること
-- [ ] `tests/test_hooks.py`
+- [x] `tests/test_hooks.py`
   - `make_progress_hook()`: downloading/finished/error ステータスの処理
   - `make_postprocessor_hook()`: started/finished イベントでスピナー制御
   - tracker への記録が正しく行われること
-- [ ] `tests/test_format_selector.py`
+- [x] `tests/test_format_selector.py`
   - `build_format_selector()`: 全モード (fast/normal/hq) x 全品質 (best/1080/720) の組み合わせ
   - 出力文字列に期待するコーデック指定が含まれること
-- [ ] `tests/test_downloader.py`
+- [x] `tests/test_downloader.py`
   - `build_ydl_opts()`: 各モードで正しいオプション辞書が構築されること
   - `download()`: `yt_dlp.YoutubeDL` をモックして正常系・エラー系を検証
 
