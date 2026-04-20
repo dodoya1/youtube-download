@@ -320,12 +320,23 @@ def download(
         warn("チャンネル URL では --no-playlist は無視されます")
         no_playlist = False
 
+    # Twitter Spaces は映像を持たないため音声のみ処理を強制する
+    if url_type == "twitter_spaces" and not audio_only:
+        warn("Twitter Spaces は音声のみです。自動的に --audio-only 相当で処理します")
+        audio_only = True
+
     out_dir, archive_path, channel_name = _resolve_output_paths(
         url_type, url, use_archive,
     )
     out_dir.mkdir(parents=True, exist_ok=True)
-    # 同名タイトルの動画が衝突しないよう動画IDを付加する
-    outtmpl = str(out_dir / "%(title)s [%(id)s].%(ext)s")
+    # 同名タイトルの動画が衝突しないよう動画IDを付加する。
+    # Spaces は URL に投稿者情報が無いため、yt-dlp のテンプレート変数で解決する。
+    if url_type == "twitter_spaces":
+        outtmpl = str(
+            out_dir / "%(uploader_id)s" / "%(title)s [%(id)s].%(ext)s"
+        )
+    else:
+        outtmpl = str(out_dir / "%(title)s [%(id)s].%(ext)s")
 
     date_range_obj = _build_date_range(date_after, date_before)
     playlist_items = f"1:{limit}" if limit is not None else None

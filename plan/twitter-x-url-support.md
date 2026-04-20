@@ -53,11 +53,11 @@ Spaces は映像なし (音声のみ) のため、内部的に強制 `audio_only
 - [x] コミット
 
 ### Commit 3: Spaces 強制 audio-only
-- [ ] `download()` 内で Spaces の場合に `audio_only=True` にする
-- [ ] Spaces 用の outtmpl を `%(uploader_id)s` で組み立てる
-- [ ] テスト追加
-- [ ] `uv run pytest` 緑確認
-- [ ] コミット
+- [x] `download()` 内で Spaces の場合に `audio_only=True` にする
+- [x] Spaces 用の outtmpl を `%(uploader_id)s` で組み立てる
+- [x] テスト追加
+- [x] `uv run pytest` 緑確認
+- [x] コミット
 
 ### Commit 4: ドキュメント
 - [ ] `README.md` に Twitter/X サポート追記

@@ -159,6 +159,42 @@ class TestDownload:
 
         assert str(output_dir / "twitter" / "jack") in captured_opts["outtmpl"]
 
+    def test_twitter_spaces_forces_audio_only_and_uses_uploader_template(
+        self, non_tty_stdout: None, tmp_path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        output_dir = tmp_path / "downloads"
+        monkeypatch.setattr("yt_downloader.downloader.OUTPUT_DIR", output_dir)
+        monkeypatch.setattr(
+            "yt_downloader.downloader.ARCHIVE_DIR", output_dir / ".archive")
+        monkeypatch.setattr(
+            "yt_downloader.downloader.TWITTER_DIR", output_dir / "twitter")
+
+        captured_opts: dict = {}
+
+        def capture_opts(opts):
+            captured_opts.update(opts)
+            mock = MagicMock()
+            mock.__enter__.return_value.download.return_value = 0
+            return mock
+
+        with patch("yt_downloader.downloader.yt_dlp.YoutubeDL", side_effect=capture_opts):
+            download(
+                url="https://x.com/i/spaces/1AbCdEfGhIjKl",
+                quality="best",
+                fmt="mp4",
+                audio_only=False,  # 指定無しでも Spaces なら自動で audio-only になる
+                no_playlist=False,
+                mode="fast",
+            )
+
+        # outtmpl に uploader_id のテンプレートが含まれる
+        assert "%(uploader_id)s" in captured_opts["outtmpl"]
+        # 音声抽出ポストプロセッサーが有効 = 強制 audio-only が効いている
+        assert any(
+            p.get("key") == "FFmpegExtractAudio"
+            for p in captured_opts["postprocessors"]
+        )
+
     def test_download_error_exits(
         self, non_tty_stdout: None, tmp_path, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
