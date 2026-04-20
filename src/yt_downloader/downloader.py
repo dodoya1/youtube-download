@@ -11,13 +11,18 @@ from yt_downloader.config import (
     ARCHIVE_DIR,
     ENCODER_PRESETS,
     OUTPUT_DIR,
+    TWITTER_DIR,
 )
 from yt_downloader.encoding import EncodingSpinner
 from yt_downloader.hooks import make_postprocessor_hook, make_progress_hook
 from yt_downloader.logger import YtDlpLogger
 from yt_downloader.tracker import DownloadTracker
 from yt_downloader.ui import c, error, info, ok, warn
-from yt_downloader.url import detect_url_type, extract_channel_name
+from yt_downloader.url import (
+    detect_url_type,
+    extract_channel_name,
+    extract_twitter_username,
+)
 
 
 def build_format_selector(quality: str, mode: str = "normal") -> str:
@@ -167,6 +172,15 @@ def _resolve_output_paths(
         archive_path: str | None = str(ARCHIVE_DIR / f"{channel_name}.txt")
         return out_dir, archive_path, channel_name
 
+    if url_type == "twitter_video":
+        username = extract_twitter_username(url)
+        return TWITTER_DIR / username, None, username
+
+    if url_type == "twitter_spaces":
+        # URL に username を含まないため、yt-dlp の出力テンプレート側で
+        # %(uploader_id)s を用いて動的にサブディレクトリを作成する。
+        return TWITTER_DIR, None, None
+
     if url_type == "playlist" and use_archive:
         ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
         return OUTPUT_DIR, str(ARCHIVE_DIR / "playlists.txt"), None
@@ -236,6 +250,10 @@ def _print_download_config(
     """
     if url_type == "channel" and channel_name is not None:
         info(f"チャンネル検出: {c(channel_name, 'bold')}")
+    elif url_type == "twitter_video" and channel_name is not None:
+        info(f"Twitter/X ユーザー検出: {c(channel_name, 'bold')}")
+    elif url_type == "twitter_spaces":
+        info("Twitter Spaces を検出")
 
     mode_labels = {
         "fast":   (c("高速", "green"),   c("ストリームコピー（再エンコードなし・最大 1080p）", "green")),

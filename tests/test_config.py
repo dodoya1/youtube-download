@@ -39,6 +39,10 @@ class TestPaths:
         assert config.ARCHIVE_DIR.parent == config.OUTPUT_DIR
         assert config.ARCHIVE_DIR.name == ".archive"
 
+    def test_twitter_dir_is_under_output_dir(self) -> None:
+        assert config.TWITTER_DIR.parent == config.OUTPUT_DIR
+        assert config.TWITTER_DIR.name == "twitter"
+
 
 class TestEncoderPresets:
     def test_all_modes_present(self) -> None:

@@ -46,11 +46,11 @@ Spaces は映像なし (音声のみ) のため、内部的に強制 `audio_only
 - [x] コミット
 
 ### Commit 2: 保存先解決
-- [ ] `src/yt_downloader/config.py` に `TWITTER_DIR` 追加
-- [ ] `_resolve_output_paths` に Twitter 分岐追加
-- [ ] `tests/test_downloader.py` に Twitter 系出力パステスト追加
-- [ ] `uv run pytest` 緑確認
-- [ ] コミット
+- [x] `src/yt_downloader/config.py` に `TWITTER_DIR` 追加
+- [x] `_resolve_output_paths` に Twitter 分岐追加
+- [x] `tests/test_downloader.py` に Twitter 系出力パステスト追加
+- [x] `uv run pytest` 緑確認
+- [x] コミット
 
 ### Commit 3: Spaces 強制 audio-only
 - [ ] `download()` 内で Spaces の場合に `audio_only=True` にする

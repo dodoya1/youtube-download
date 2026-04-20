@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from yt_downloader.downloader import build_ydl_opts, download
+from yt_downloader.downloader import _resolve_output_paths, build_ydl_opts, download
 from yt_downloader.encoding import EncodingSpinner
 from yt_downloader.tracker import DownloadTracker
 
@@ -128,6 +128,36 @@ class TestDownload:
             m.assert_called_once()
             mock_ydl.__enter__.return_value.download.assert_called_once_with(
                 ["https://youtu.be/abc123"])
+
+    def test_twitter_video_saved_under_twitter_username_dir(
+        self, non_tty_stdout: None, tmp_path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        output_dir = tmp_path / "downloads"
+        monkeypatch.setattr("yt_downloader.downloader.OUTPUT_DIR", output_dir)
+        monkeypatch.setattr(
+            "yt_downloader.downloader.ARCHIVE_DIR", output_dir / ".archive")
+        monkeypatch.setattr(
+            "yt_downloader.downloader.TWITTER_DIR", output_dir / "twitter")
+
+        captured_opts: dict = {}
+
+        def capture_opts(opts):
+            captured_opts.update(opts)
+            mock = MagicMock()
+            mock.__enter__.return_value.download.return_value = 0
+            return mock
+
+        with patch("yt_downloader.downloader.yt_dlp.YoutubeDL", side_effect=capture_opts):
+            download(
+                url="https://x.com/jack/status/20",
+                quality="best",
+                fmt="mp4",
+                audio_only=False,
+                no_playlist=False,
+                mode="fast",
+            )
+
+        assert str(output_dir / "twitter" / "jack") in captured_opts["outtmpl"]
 
     def test_download_error_exits(
         self, non_tty_stdout: None, tmp_path, monkeypatch: pytest.MonkeyPatch,

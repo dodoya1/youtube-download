@@ -7,6 +7,7 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 OUTPUT_DIR = _PROJECT_ROOT / "downloads"
 ARCHIVE_DIR = OUTPUT_DIR / ".archive"
+TWITTER_DIR = OUTPUT_DIR / "twitter"
 
 # ── 品質・形式の選択肢 ────────────────────────────────────────────────────────
 QUALITY_OPTIONS = ["best", "2160", "1440",
