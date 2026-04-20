@@ -15,6 +15,7 @@ M1 Mac のハードウェアエンコーダー（`h264_videotoolbox`）に対応
 - 📋 **プレイリスト対応** — YouTube のプレイリスト URL をそのまま指定して一括ダウンロード
 - 📺 **チャンネル対応** — チャンネル URL で全動画を一括ダウンロード、中断・再開対応
 - 🔗 **複数 URL 対応** — 動画 / プレイリスト / チャンネルを混ぜて一度に指定可能
+- 🐦 **Twitter/X 対応** — ツイート内の動画や Twitter Spaces もそのまま URL 指定でダウンロード
 - 🎵 **音声のみ抽出** — MP3 320kbps で音声のみ保存
 - 📊 **リアルタイム進捗表示** — ダウンロード・エンコードの進捗をターミナルに表示
 - 🔧 **解像度・形式の柔軟な指定** — 4K〜144p、MP4 / MKV / WebM
@@ -122,6 +123,30 @@ python main.py "https://www.youtube.com/@username" --date-after 20240101 --date-
 python main.py "https://youtu.be/xxxxx" --no-playlist
 ```
 
+### Twitter / X の動画をダウンロード
+
+```bash
+# ツイート内の動画
+python main.py "https://x.com/username/status/1234567890"
+
+# 旧ドメインも可
+python main.py "https://twitter.com/username/status/1234567890"
+```
+
+ツイート URL を指定すると `downloads/twitter/<ユーザー名>/` にサブディレクトリを作成して保存します。  
+エンコードモード（`--fast` / `--hq`）や `--audio-only` などの既存オプションがそのまま使えます。
+
+### Twitter Spaces（音声）をダウンロード
+
+```bash
+python main.py "https://x.com/i/spaces/1AbCdEfGhIjKl"
+```
+
+Spaces は映像を持たないため、自動的に音声のみ（MP3 320kbps）として保存されます。  
+出力先は `downloads/twitter/<投稿者ID>/` です（投稿者 ID は yt-dlp がメタデータから自動取得）。
+
+> ⚠️ Twitter/X は**公開ツイートのみ**に対応しています（鍵付き・年齢制限・フォロワー限定などの非公開ツイートは未対応）。
+
 ### 音声のみ MP3 で保存
 
 ```bash
@@ -141,7 +166,7 @@ python main.py "https://youtu.be/aaa" "https://youtu.be/bbb" "https://youtu.be/c
 ```
 
 - 空白区切りで複数 URL を指定できます。**全 URL に同じオプションが適用されます**（`-q`, `--fast`, `--hq`, `--audio-only`, `--date-after`, `--limit` など）。
-- 動画 / プレイリスト / チャンネル URL の**混在も可能**で、URL ごとに種別が自動判定されます（チャンネルは `downloads/<チャンネル名>/` に、それ以外は `downloads/` 直下に出力）。
+- 動画 / プレイリスト / チャンネル / Twitter ツイート / Twitter Spaces の**混在も可能**で、URL ごとに種別が自動判定されます（YouTube チャンネルは `downloads/<チャンネル名>/`、Twitter 系は `downloads/twitter/<ユーザー名>/`、それ以外は `downloads/` 直下に出力）。
 - 途中の URL でダウンロードエラーが発生しても**残りの URL は続行**されます。全件処理後に失敗があれば終了コード `1` を返し、失敗した URL 一覧を表示します。
 - `Ctrl+C` は全体を即時停止します（終了コード `130`）。
 
@@ -210,9 +235,12 @@ yt-downloader/
 ├── .venv/                   # uv が作成する仮想環境（Git 管理外）
 └── downloads/               # ダウンロードした動画の保存先（自動作成）
     ├── video_title [id].mp4 #   単一動画・プレイリストの出力先
-    ├── username/            #   チャンネル名のサブディレクトリ
+    ├── username/            #   YouTube チャンネル名のサブディレクトリ
     │   ├── video1 [id].mp4
     │   └── video2 [id].mp4
+    ├── twitter/             #   Twitter/X の投稿者別サブディレクトリ
+    │   └── twuser/
+    │       └── tweet_title [id].mp4
     └── .archive/            #   ダウンロード済み記録（自動作成）
         └── username.txt
 ```

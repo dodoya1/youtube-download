@@ -15,6 +15,7 @@ It supports the M1 Mac hardware encoder (`h264_videotoolbox`) to achieve both hi
 - 📋 **Playlist support** — pass a YouTube playlist URL to download everything at once
 - 📺 **Channel support** — download every video on a channel URL, with resume on interruption
 - 🔗 **Multiple URLs** — mix videos, playlists, and channels in a single command
+- 🐦 **Twitter/X support** — download videos embedded in tweets and Twitter Spaces audio via the same URL interface
 - 🎵 **Audio-only extraction** — save just the audio as MP3 320kbps
 - 📊 **Real-time progress display** — download and encode progress printed to the terminal
 - 🔧 **Flexible resolution & format** — 4K to 144p, MP4 / MKV / WebM
@@ -122,6 +123,30 @@ python main.py "https://www.youtube.com/@username" --date-after 20240101 --date-
 python main.py "https://youtu.be/xxxxx" --no-playlist
 ```
 
+### Download Twitter / X videos
+
+```bash
+# Video inside a tweet
+python main.py "https://x.com/username/status/1234567890"
+
+# The legacy twitter.com domain also works
+python main.py "https://twitter.com/username/status/1234567890"
+```
+
+Tweet URLs are saved under `downloads/twitter/<username>/`.
+Existing options like `--fast`, `--hq`, and `--audio-only` work the same way.
+
+### Download Twitter Spaces (audio)
+
+```bash
+python main.py "https://x.com/i/spaces/1AbCdEfGhIjKl"
+```
+
+Spaces have no video track, so they are automatically saved as audio-only (MP3 320kbps).
+Output goes under `downloads/twitter/<uploader_id>/` (the uploader id is resolved by yt-dlp from metadata).
+
+> ⚠️ Only **public tweets** are supported (protected / age-restricted / follower-only tweets are not).
+
 ### Save audio only as MP3
 
 ```bash
@@ -141,7 +166,7 @@ python main.py "https://youtu.be/aaa" "https://youtu.be/bbb" "https://youtu.be/c
 ```
 
 - Pass multiple URLs separated by spaces. **The same options apply to every URL** (`-q`, `--fast`, `--hq`, `--audio-only`, `--date-after`, `--limit`, etc.).
-- You can **mix video / playlist / channel URLs**. Each URL's type is detected independently (channels go under `downloads/<channel_name>/`, everything else goes directly under `downloads/`).
+- You can **mix video / playlist / channel / Twitter tweet / Twitter Spaces URLs**. Each URL's type is detected independently (YouTube channels go under `downloads/<channel_name>/`, Twitter URLs go under `downloads/twitter/<username>/`, everything else goes directly under `downloads/`).
 - If one URL fails, **the remaining URLs continue processing**. After all URLs are done, the process exits with code `1` if any failures occurred, along with a list of the failed URLs.
 - `Ctrl+C` aborts the whole run immediately (exit code `130`).
 
@@ -210,9 +235,12 @@ yt-downloader/
 ├── .venv/                   # Virtual env created by uv (gitignored)
 └── downloads/               # Output directory (auto-created)
     ├── video_title [id].mp4 #   Output for single videos / playlists
-    ├── username/            #   Per-channel subdirectory
+    ├── username/            #   Per YouTube channel subdirectory
     │   ├── video1 [id].mp4
     │   └── video2 [id].mp4
+    ├── twitter/             #   Per Twitter/X uploader subdirectory
+    │   └── twuser/
+    │       └── tweet_title [id].mp4
     └── .archive/            #   Download archive (auto-created)
         └── username.txt
 ```

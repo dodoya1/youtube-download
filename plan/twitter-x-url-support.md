@@ -60,9 +60,9 @@ Spaces は映像なし (音声のみ) のため、内部的に強制 `audio_only
 - [x] コミット
 
 ### Commit 4: ドキュメント
-- [ ] `README.md` に Twitter/X サポート追記
-- [ ] `README-en.md` に Twitter/X サポート追記
-- [ ] コミット
+- [x] `README.md` に Twitter/X サポート追記
+- [x] `README-en.md` に Twitter/X サポート追記
+- [x] コミット
 
 ---
 
