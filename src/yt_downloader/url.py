@@ -1,4 +1,4 @@
-"""YouTube URL の種別判定とチャンネル名抽出ロジック。"""
+"""動画配信サイトの URL 種別判定と識別子抽出ロジック。"""
 
 import re
 
@@ -9,16 +9,29 @@ _CHANNEL_PATTERNS = (
     r"youtube\.com/user/([\w\-]+)",
 )
 
+_TWITTER_VIDEO_PATTERNS = (
+    r"(?:twitter|x)\.com/([\w\-]+)/status/\d+",
+)
+
+_TWITTER_SPACES_PATTERNS = (
+    r"(?:twitter|x)\.com/i/spaces/[\w\-]+",
+)
+
 
 def detect_url_type(url: str) -> str:
-    """YouTube URL の種別を判定する。
+    """URL の種別を判定する。
 
     Args:
-        url: YouTube URL。
+        url: 対象 URL。
 
     Returns:
-        "channel" / "playlist" / "video" のいずれか。
+        ``"channel"`` / ``"playlist"`` / ``"video"`` / ``"twitter_video"`` /
+        ``"twitter_spaces"`` のいずれか。
     """
+    if any(re.search(p, url) for p in _TWITTER_SPACES_PATTERNS):
+        return "twitter_spaces"
+    if any(re.search(p, url) for p in _TWITTER_VIDEO_PATTERNS):
+        return "twitter_video"
     if any(re.search(p, url) for p in _CHANNEL_PATTERNS):
         return "channel"
     if re.search(r"youtube\.com/playlist\?list=", url):
@@ -27,7 +40,7 @@ def detect_url_type(url: str) -> str:
 
 
 def extract_channel_name(url: str) -> str:
-    """チャンネル URL からディレクトリ名に使う識別子を抽出する。
+    """YouTube チャンネル URL からディレクトリ名に使う識別子を抽出する。
 
     Args:
         url: YouTube チャンネル URL。
@@ -41,3 +54,19 @@ def extract_channel_name(url: str) -> str:
         if m:
             return m.group(1)
     return "unknown_channel"
+
+
+def extract_twitter_username(url: str) -> str:
+    """Twitter/X のツイート URL から username を抽出する。
+
+    Args:
+        url: Twitter/X ツイート URL。
+
+    Returns:
+        ``<user>`` 部分。マッチしない場合は ``"unknown_user"``。
+    """
+    for pattern in _TWITTER_VIDEO_PATTERNS:
+        m = re.search(pattern, url)
+        if m:
+            return m.group(1)
+    return "unknown_user"
